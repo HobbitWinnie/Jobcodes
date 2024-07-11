@@ -1,0 +1,8 @@
+# Ignore filefolder
+RemoteCLIP/Datasets/
+RemoteCLIP/Datasets/RSITMD/
+RemoteCLIP/assets/
+RemoteCLIP/checkpoints/
+RemoteCLIP/cache/
+
+OLMo/
