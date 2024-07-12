@@ -4,23 +4,16 @@ from PIL import Image
 from dataclasses import dataclass
 
 @dataclass
-class RemoteCLIPConfig:
+class Config:
     model_name: str
     checkpoint_path: str
     image_path: str
     text_queries: list
     device: str = 'cuda'
 
-
-class RemoteCLIPModel:
-    def __init__(self, config: RemoteCLIPConfig):
-        """Initializes the CLIP model for image-text retrieval.
-
-        Args:
-            model_name (str): Name of the model architecture.
-            checkpoint_path (str): Path to the checkpoint file.
-            device (str): Device to run the model on. Default is 'cuda'.
-        """
+class ImagetoTextRetrieval:
+    def __init__(self, config: Config):
+        """Initializes the CLIP model for image-text retrieval."""
         self.device = torch.device(config.device if torch.cuda.is_available() else 'cpu')
         
         # Create the model and preprocessing transformations.
@@ -38,11 +31,7 @@ class RemoteCLIPModel:
         self.model = self.model.to(self.device).eval()
 
     def _load_checkpoint(self, checkpoint_path: str):
-        """Loads the model weights from the checkpoint.
-
-        Args:
-            checkpoint_path (str): Path to the checkpoint file.
-        """
+        """Loads the model weights from the checkpoint."""
         try:
             ckpt = torch.load(checkpoint_path, map_location="cpu")
             message = self.model.load_state_dict(ckpt, strict=False)
@@ -51,14 +40,7 @@ class RemoteCLIPModel:
             raise RuntimeError(f"Failed to load model checkpoint: {e}")
 
     def preprocess_image(self) -> torch.Tensor:
-        """Loads and preprocesses the image.
-
-        Args:
-            image_path (str): Path to the input image.
-
-        Returns:
-            torch.Tensor: Preprocessed image tensor.
-        """
+        """Loads and preprocesses the image."""
         try:
             image = Image.open(self.image_path).convert('RGB')
             image_tensor = self.preprocess(image).unsqueeze(0).to(self.device)
@@ -67,61 +49,42 @@ class RemoteCLIPModel:
             raise RuntimeError(f"Failed to open or preprocess image: {e}")
 
     def tokenize_text(self) -> torch.Tensor:
-        """Tokenizes the text queries.
-        Args: text_queries (list): List of text queries.
-        Returns: torch.Tensor: Tokenized text tensor.
-        """
+        """Tokenizes the text queries."""
         try:
             return self.tokenizer(self.text_queries).to(self.device)
         except Exception as e:
             raise RuntimeError(f"Failed to tokenize text: {e}")
         
     def predict(self) -> dict:
-        """Predicts the similarity between image and text queries.
-
-        Args:
-            image_path (str): Path to the input image.
-            text_queries (list): List of text queries.
-
-        Returns:
-            dict: Predictions with text queries as keys and probabilities as values.
-        """
+        """Predicts the similarity between image and text queries."""
         try:
             image_tensor = self.preprocess_image()
             text_tokens = self.tokenize_text()
 
-            # 启用无梯度和混合精度推理
+            # Enable no_grad and mixed precision inference
             with torch.no_grad(), torch.cuda.amp.autocast():
                 image_features = self.model.encode_image(image_tensor)
                 text_features = self.model.encode_text(text_tokens)
 
-                # 归一化特征向量
+                # Normalize feature vectors
                 image_features = image_features / image_features.norm(dim=-1, keepdim=True)
                 text_features = text_features / text_features.norm(dim=-1, keepdim=True)
 
-                # 计算相似度并转换为概率
+                # Compute similarity and convert to probabilities
                 text_probs = (100.0 * image_features @ text_features.T).softmax(dim=-1).cpu().numpy()[0]
 
             return {query: prob for query, prob in zip(self.text_queries, text_probs)}
         except Exception as e:
             raise RuntimeError(f"Failed to predict: {e}")
 
-def run_clip_model(config: RemoteCLIPConfig):
-    """Runs the CLIP model for image-text retrieval."""
-    clip_model = RemoteCLIPModel(config)
-    predictions = clip_model.predict()
 
-    print(f'Predictions of {config.model_name}:')
-    for query, prob in predictions.items():
-        print(f"{query:<40} {prob * 100:5.1f}%")
-
+# 用法示例
 if __name__ == "__main__":
-
-    # 定义输入参数
-    model_name='ViT-L-14'
+    # Define input parameters
+    model_name = 'ViT-L-14'
     checkpoint_path = f"/home/nw/Codes/RemoteCLIP/checkpoints/RemoteCLIP-{model_name}.pt"
 
-    config = RemoteCLIPConfig(
+    config = Config(
         model_name=model_name,
         checkpoint_path=checkpoint_path,
         image_path='/home/nw/Codes/RemoteCLIP/assets/airport.jpg',
@@ -131,10 +94,17 @@ if __name__ == "__main__":
             "A building next to a lake.", 
             "Many people in a stadium.", 
             "a cute cat"
-            ],
-        device='cuda'  # 或者 'cpu' 根据你的设备环境
+        ],
+        device='cuda'  # or 'cpu' depending on your environment
     )
 
-    # 直接调用函数进行调试
-    run_clip_model(config)
+    # Run the CLIP model for image-text retrieval
+    retrieval_model = ImagetoTextRetrieval(config)
+    predictions = retrieval_model.predict()
 
+    # Find the text query with the highest probability
+    best_query = max(predictions, key=predictions.get)
+    best_prob = predictions[best_query]
+
+    print(f'Best prediction for {config.model_name}:')
+    print(f"{best_query:<40} {best_prob * 100:5.1f}%")
