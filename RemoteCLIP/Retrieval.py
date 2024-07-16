@@ -154,7 +154,7 @@ def main():
 
     # 定义路径作为常量
     ROOT_DIR = '/home/nw/Codes/RemoteCLIP'
-    DATASET_DIR = os.path.join(ROOT_DIR, 'Datasets/RSITMD')
+    DATASET_DIR = os.path.join(ROOT_DIR, 'Datasets/Retrieval-3/RSITMD')
     CHECKPOINTS_DIR = os.path.join(ROOT_DIR, 'checkpoints')
 
     # 构建Config对象

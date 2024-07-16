@@ -116,7 +116,7 @@ if __name__ == "__main__":
     OUTPUT_DIR = os.path.join(ROOT_DIR, 'output')  
     os.makedirs(OUTPUT_DIR, exist_ok=True)  
 
-    image_path = os.path.join(DATASET_DIR, 'val/Semantic_masks/images/P0003_instance_color_RGB.png')  
+    image_path = os.path.join(DATASET_DIR, 'val/Semantic_masks/images/P0130_instance_color_RGB.png')  
     if not os.path.exists(image_path):  
         print(f"Error: The image path '{image_path}' does not exist.")  
     else:  

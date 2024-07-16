@@ -59,8 +59,17 @@ class MaskToBoxAndCaption:
             img_center_x, img_center_y = image_shape[1] / 2, image_shape[0] / 2  
             center_x, center_y = bbox[0] + bbox[2] / 2, bbox[1] + bbox[3] / 2  
             
-            # 判断目标是否位于图像的中心区域  
-            return (0.25 * img_center_x < center_x < 1.75 * img_center_x) and (0.25 * img_center_y < center_y < 1.75 * img_center_y)  
+            # 计算中心区域的边界  
+            region_width = image_shape[1] / 3  
+            region_height = image_shape[0] / 3  
+            
+            left_bound = img_center_x - (region_width / 2)  
+            right_bound = img_center_x + (region_width / 2)  
+            top_bound = img_center_y - (region_height / 2)  
+            bottom_bound = img_center_y + (region_height / 2)  
+            
+            # 判断目标是否位于中心区域  
+            return (left_bound < center_x < right_bound) and (top_bound < center_y < bottom_bound)  
 
         # 按照目标位置生成前两个描述  
         center_objects = {categories[i] for i, bbox in enumerate(self.bboxes) if is_center(bbox, image_shape)}  
@@ -74,7 +83,7 @@ class MaskToBoxAndCaption:
         if non_center_objects:  
             captions.append(f'The object(s) not located in the center: {", ".join(non_center_objects)}')  
         else:  
-            captions.append('All objects are located in the center of the image.')  
+            captions.append('All objects are located in the center of the image.')
 
         unique_objects = list(set(categories))  
         for _ in range(3):  
