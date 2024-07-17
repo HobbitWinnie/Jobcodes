@@ -3,6 +3,8 @@ from PIL import Image
 from pathlib import Path  
 import torch  
 import open_clip  
+import logging  
+
 
 LABEL_MAPPING = {  
     0: 'Airport',  
@@ -26,16 +28,24 @@ LABEL_MAPPING = {
     18: 'railwayStation'  
 }  
 
+# 配置日志  
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')  
+
 class RemoteCLIPZeroShotClassifier:  
-    def __init__(self, model_name='ViT-L-14', device=None):  
+    def __init__(self, ckpt_path, model_name='ViT-L-14', device=None):  
+        self.model_name = model_name
         self.device = device if device else ('cuda' if torch.cuda.is_available() else 'cpu')  
+        
         # Load CLIP model and preprocessing function  
-        self.model, self.preprocess_func, _ = open_clip.create_model_and_transforms(model_name, pretrained='openai')  
-        self.tokenizer = open_clip.get_tokenizer(model_name)  
+        self.model, self.preprocess_func, _ = open_clip.create_model_and_transforms(self.model_name)
+        self.tokenizer = open_clip.get_tokenizer(self.model_name)  
+        
+        # Load model checkpoint  
+        self.model.load_state_dict(torch.load(ckpt_path, map_location=self.device))  
         self.model = self.model.to(self.device).eval()  
 
         self.label_texts = [LABEL_MAPPING[i] for i in range(len(LABEL_MAPPING))]  
-        self.label_text_features = self._get_text_features(self.label_texts)  
+        self.label_text_features = self._get_text_features(self.label_texts).to(torch.float32)  
 
     def _get_text_features(self, texts):  
         tokenized_texts = self.tokenizer(texts).to(self.device)  
@@ -50,11 +60,11 @@ class RemoteCLIPZeroShotClassifier:
 
     def classify_image(self, query_image):  
         query_image = query_image.unsqueeze(0).to(self.device)  
-        image_features = self.get_image_features(query_image)  
+        image_features = self.get_image_features(query_image).to(torch.float32)  
         with torch.no_grad():  
             similarities = (100.0 * image_features @ self.label_text_features.T).softmax(dim=-1)  
             top_probs, top_labels = similarities.cpu().topk(1, dim=-1)  
-        return LABEL_MAPPING[top_labels.item()]  
+        return LABEL_MAPPING[top_labels.item()], top_probs.item()  # 返回概率和标签  
 
 def classify_images_in_folder(folder_path, classifier):  
     if not os.path.exists(folder_path):  
@@ -66,11 +76,16 @@ def classify_images_in_folder(folder_path, classifier):
         query_image = Image.open(image_path).convert('RGB')  
         query_image = classifier.preprocess_func(query_image)  
 
-        predicted_label = classifier.classify_image(query_image)  
-        print(f'File: {file_name}, Predicted label: {predicted_label}')  
-
+        predicted_label, probability = classifier.classify_image(query_image)  
+        logging.info(f"File: {file_name}\n"  
+                     f"Path: {image_path}\n"  
+                     f"Predicted label: {predicted_label}\n"  
+                     f"Probability: {probability:.2%}\n"  
+                     f"{'-'*40}") 
 if __name__ == "__main__":  
-    query_folder_path = '/home/nw/Codes/RemoteCLIP/Datasets/Classification-12/testdata'  
+    query_folder_path = '/mnt/d/nw/Datasets/Classification-12/testdata'  
+    ckpt_path = '/home/nw/Codes/RemoteCLIP/checkpoints/RemoteCLIP-ViT-L-14.pt'
+    model_name='ViT-L-14'
 
-    classifier = RemoteCLIPZeroShotClassifier()  
+    classifier = RemoteCLIPZeroShotClassifier(ckpt_path, model_name)  
     classify_images_in_folder(query_folder_path, classifier)

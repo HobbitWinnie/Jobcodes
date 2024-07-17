@@ -120,7 +120,7 @@ if __name__ == "__main__":
         (0, 100, 155): "harbor"  
     }  
 
-    ROOT_DIR = '/home/nw/Codes/RemoteCLIP'  
+    ROOT_DIR = '/mnt/d/nw'  
     DATASET_DIR = os.path.join(ROOT_DIR, 'Datasets/Segmentation-4/iSAID')  
     OUTPUT_DIR = os.path.join(ROOT_DIR, 'output')  
     os.makedirs(OUTPUT_DIR, exist_ok=True)  
