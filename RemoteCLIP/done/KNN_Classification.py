@@ -1,13 +1,18 @@
 import os
+import sys  
+import torch
+import numpy as np
+import logging  
+import open_clip
+
 from PIL import Image
 from pathlib import Path  
-from torch.utils.data import Dataset, DataLoader
-import numpy as np
-import torch
+from torch.utils.data import DataLoader
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.preprocessing import LabelEncoder
-import open_clip
-import logging  
+
+sys.path.append('/home/nw/Codes/DatasetLoader')  
+from WHURS19_DatasetLoader import WHURS19DatasetLoader 
 
 LABEL_MAPPING = {
     0: 'Airport',
@@ -34,36 +39,6 @@ LABEL_MAPPING = {
 # 配置日志  
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')  
 
-# 数据集类
-class WHURS19DatasetLoader(Dataset):
-    def __init__(self, root_dir, preprocess_func):
-        self.root_dir = root_dir
-        self.preprocess_func = preprocess_func
-
-        self.image_paths = []
-        self.labels = []
-        self.classes = sorted(os.listdir(root_dir))
-        self.class_to_idx = {cls: idx for idx, cls in enumerate(self.classes)}
-
-        for cls in self.classes:
-            class_dir = os.path.join(root_dir, cls)
-            if os.path.isdir(class_dir):
-                for fname in os.listdir(class_dir):
-                    if fname.lower().endswith(('.jpg', '.jpeg', '.png', '.bmp')):
-                        self.image_paths.append(os.path.join(class_dir, fname))
-                        self.labels.append(self.class_to_idx[cls])
-
-    def __len__(self):
-        return len(self.image_paths)
-
-    def __getitem__(self, idx):
-        image_path = self.image_paths[idx]
-        label = self.labels[idx]
-        image = Image.open(image_path).convert('RGB')
-        image = self.preprocess_func(image)
-        return image, label
-
-# 分类器类
 class RemoteCLIPClassifier:
     def __init__(self, ckpt_path, model_name='ViT-L-14', device=None):
         self.model_name = model_name
@@ -88,7 +63,7 @@ class RemoteCLIPClassifier:
     def fit_knn(self, dataloader, n_neighbors=20):
         train_image_features = []
         train_labels = []
-        for images, labels in dataloader:
+        for images, labels, paths in dataloader:
             features = self.get_image_features(images)
             train_image_features.append(features)
             train_labels.extend(labels.numpy())
@@ -99,13 +74,42 @@ class RemoteCLIPClassifier:
         self.knn.fit(train_image_features, train_labels_encoded)
 
     def classify_image(self, query_image):
-        query_image = query_image.unsqueeze(0).to(self.device)
+        # if len(query_image.size()) == 3:  
+        #     query_image = query_image.unsqueeze(0)          
+        query_image = query_image.unsqueeze(0).to(self.device)          
         query_image_features = self.get_image_features(query_image)
+
         predicted_label_encoded = self.knn.predict(query_image_features)
         predicted_label = self.label_encoder.inverse_transform(predicted_label_encoded)
-        return predicted_label[0]
+        
+        return LABEL_MAPPING[predicted_label[0]]
 
+def evaluate_classifier(classifier, dataset):  
+    total_images = 0  
+    correct_predictions = 0  
 
+    for image, ground_truth_label, image_path in dataset:  
+        ground_truth_label = LABEL_MAPPING.get(ground_truth_label, "Unknown Label")  
+        predicted_label = classifier.classify_image(image)  
+
+        # logging.info(f"Predicted label: {predicted_label}\n"  
+        #              f"Ground truth label: {ground_truth_label}\n"  
+        #              f"{'-'*40}")  
+
+        if predicted_label == ground_truth_label:  
+            correct_predictions += 1  
+        else:
+            logging.info(f"image_path: {image_path}\n"
+                         f"Predicted label: {predicted_label}\n"  
+                         f"Ground truth label: {ground_truth_label}\n"   
+                         f"{'-'*40}") 
+        total_images += 1  
+
+    accuracy = correct_predictions / total_images if total_images > 0 else 0  
+    logging.info(f"Total images: {total_images}\n"  
+                 f"Correct predictions: {correct_predictions}\n"  
+                 f"Accuracy: {accuracy:.2%}") 
+    
 # 定义图像分类函数  
 def classify_images_in_folder(folder_path, classifier, label_mapping):  
     # 检查输入文件夹路径是否存在  
@@ -123,40 +127,41 @@ def classify_images_in_folder(folder_path, classifier, label_mapping):
         file_name = os.path.basename(image_path)  
 
         # 打开图像并进行预处理  
-        query_image = Image.open(image_path).convert('RGB')  
+        query_image = Image.open(image_path).convert('RGB')
         query_image = classifier.preprocess_func(query_image)  # 使用模型预处理函数  
 
         # 对图像进行分类  
         predicted_label = classifier.classify_image(query_image)  
-        output_label = label_mapping.get(predicted_label, "Unknown Label")  
         
-        # 打印分类结果  
         # 打印分类结果  
         logging.info(f"\nFile: {file_name}\n"  
                      f"Path: {image_path}\n"  
-                     f"Predicted label: {output_label}\n"  
+                     f"Predicted label: {predicted_label}\n"  
                      f"{'-'*40}")  
 
-def main(root_dir, ckpt_path, query_folder_path, batch_size=32, n_neighbors=20, num_workers=4):  
+def main(data_path, ckpt_path, query_folder_path, batch_size=32, n_neighbors=20, num_workers=4):  
     # 创建分类器实例  
     classifier = RemoteCLIPClassifier(ckpt_path=ckpt_path)  
 
     # 创建数据集和数据加载器  
-    dataset = WHURS19DatasetLoader(root_dir=root_dir, preprocess_func=classifier.preprocess_func)  
-    dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers)  
+    WHURS19_dataset = WHURS19DatasetLoader(data_path=data_path, preprocess_func=classifier.preprocess_func)  
+    dataloader = DataLoader(WHURS19_dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers)  
 
     # 训练KNN分类器  
     classifier.fit_knn(dataloader, n_neighbors=n_neighbors)  
 
-    # 对查询图像进行分类  
-    classify_images_in_folder(query_folder_path, classifier, LABEL_MAPPING) 
+    # # 对查询图像进行分类  
+    # classify_images_in_folder(query_folder_path, classifier, LABEL_MAPPING) 
+    
+    # 调用评估函数计算在 WHURS19 数据集上的精度
+    evaluate_classifier(classifier, WHURS19_dataset)  
 
 
 if __name__ == "__main__":
 
     # 数据集根目录和RemoteCLIP检查点路径
-    root_dir = '/mnt/d/nw/Datasets/Classification-12/WHU-RS19'
+    data_path ='/mnt/d/nw/Datasets/Classification-12/WHU-RS19'
     ckpt_path = '/home/nw/Codes/RemoteCLIP/checkpoints/RemoteCLIP-ViT-L-14.pt'
     query_folder_path = '/mnt/d/nw/Datasets/Classification-12/testdata'
 
-    main(root_dir, ckpt_path, query_folder_path)  
+    main(data_path, ckpt_path, query_folder_path)  

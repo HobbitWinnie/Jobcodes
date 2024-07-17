@@ -1,10 +1,14 @@
 import os  
-from PIL import Image  
-from pathlib import Path  
+import sys  
 import torch  
 import open_clip  
 import logging  
 
+from PIL import Image  
+from pathlib import Path
+
+sys.path.append('/home/nw/Codes/DatasetLoader')  
+from WHURS19_DatasetLoader import WHURS19DatasetLoader 
 
 LABEL_MAPPING = {  
     0: 'Airport',  
@@ -82,10 +86,53 @@ def classify_images_in_folder(folder_path, classifier):
                      f"Predicted label: {predicted_label}\n"  
                      f"Probability: {probability:.2%}\n"  
                      f"{'-'*40}") 
+        
+def evaluate_classifier(classifier, dataset_loader):  
+    total_images = 0  
+    correct_predictions = 0  
+
+    for image, ground_truth_label, image_path in dataset_loader:  
+
+        ground_truth_label = LABEL_MAPPING.get(ground_truth_label, "Unknown Label")  
+
+        predicted_label, probability = classifier.classify_image(image)  
+        # logging.info(f"Predicted label: {predicted_label}\n"  
+        #              f"Probability: {probability:.2%}\n"  
+        #              f"Ground truth label: {ground_truth_label}\n"  
+        #              f"{'-'*40}")  
+
+        if predicted_label == ground_truth_label:  
+            correct_predictions += 1  
+        else:
+            logging.info(f"image_path: {image_path}\n"
+                         f"Predicted label: {predicted_label}\n"  
+                         f"Probability: {probability:.2%}\n"  
+                         f"Ground truth label: {ground_truth_label}\n"   
+                         f"{'-'*40}") 
+        total_images += 1  
+
+    accuracy = correct_predictions / total_images if total_images > 0 else 0  
+    logging.info(f"Total images: {total_images}\n"  
+                 f"Correct predictions: {correct_predictions}\n"  
+                 f"Accuracy: {accuracy:.2%}") 
+    
 if __name__ == "__main__":  
-    query_folder_path = '/mnt/d/nw/Datasets/Classification-12/testdata'  
+    
     ckpt_path = '/home/nw/Codes/RemoteCLIP/checkpoints/RemoteCLIP-ViT-L-14.pt'
     model_name='ViT-L-14'
 
     classifier = RemoteCLIPZeroShotClassifier(ckpt_path, model_name)  
-    classify_images_in_folder(query_folder_path, classifier)
+
+    # # 调用分类函数进行分类  
+    # query_folder_path = '/mnt/d/nw/Datasets/Classification-12/testdata'  
+    # classify_images_in_folder(query_folder_path, classifier)  
+
+    # 使用 WHURS19 数据集加载器  
+    whurs19_folder_path = '/mnt/d/nw/Datasets/Classification-12/WHU-RS19'  # WHURS19 数据集的路径  
+    whurs19_dataset_loader = WHURS19DatasetLoader(
+        data_path=whurs19_folder_path, 
+        preprocess_func=classifier.preprocess_func
+        )  
+
+    # 调用评估函数计算在 WHURS19 数据集上的精度  
+    evaluate_classifier(classifier, whurs19_dataset_loader)  
