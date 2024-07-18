@@ -1,6 +1,6 @@
 import os
 from PIL import Image
-from torch.utils.data import Dataset, DataLoader
+from torch.utils.data import Dataset
 
 # 数据集类
 class WHURS19DatasetLoader(Dataset):
