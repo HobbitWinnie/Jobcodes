@@ -1,7 +1,7 @@
 # Ignore filefolder
 RemoteCLIP/assets/
-RemoteCLIP/checkpoints/
-RemoteCLIP/cache/
+RemoteCLIP/utils/
+
 
 OLMo/
 

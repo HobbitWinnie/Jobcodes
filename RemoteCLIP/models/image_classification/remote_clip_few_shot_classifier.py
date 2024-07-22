@@ -56,12 +56,3 @@ class RemoteCLIPFewShotClassifier:
             label = support_labels[label_index]  
 
         return label, prob  
-
-# Example usage:  
-# ckpt_path = 'path_to_checkpoint.pt'  
-# support_images = [image1, image2, ...]  # List of PIL Images  
-# support_labels = ['label1', 'label2', ...]  # Corresponding labels for support_images  
-# query_image = a single PIL image  
-
-# classifier = RemoteCLIPFewShotClassifier(ckpt_path, model_name='ViT-L-14')  
-# label, prob = classifier.few_shot_classify(support_images, support_labels, query_image)

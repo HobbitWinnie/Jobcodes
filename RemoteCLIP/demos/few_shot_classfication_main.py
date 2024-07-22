@@ -12,7 +12,8 @@ import shutil  # 新增
 sys.path.append('/home/nw/Codes/DatasetLoader')  
 sys.path.append('/home/nw/Codes/RemoteCLIP/classifiers')  # assuming this is where the classifier files are  
 from WHURS19_DatasetLoader import WHURS19DatasetLoader  
-from remote_clip_zero_shot_classifier import RemoteCLIPZeroShotClassifier  
+from remote_clip_few_shot_classifier import RemoteCLIPFewShotClassifier  
+
 
 
 # 配置日志  
@@ -74,7 +75,7 @@ def organize_image(image_path, predicted_label, output_path):
     except Exception as e:  
         logging.error(f"Error copying file {file_name} to {destination_path}: {e}")  
 
-def classify_images_in_folder(folder_path, classifier, output_path, labels):  
+def classify_images_in_folder(folder_path, classifier, support_data, output_path):  
     """  
     对文件夹中的所有图像进行分类，并将分类结果返回。  
 
@@ -100,7 +101,7 @@ def classify_images_in_folder(folder_path, classifier, output_path, labels):
             query_image = Image.open(image_path).convert('RGB')  
             query_image = classifier.preprocess_func(query_image)  
 
-            predicted_label, probability = classifier.classify_image(query_image)  
+            predicted_label, probability = classifier.few_shot_classify(support_data, query_image)  
             logging.info(f"File: {file_name}\n"  
                          f"Path: {image_path}\n"  
                          f"Predicted label: {predicted_label}\n"  
@@ -116,39 +117,38 @@ def classify_images_in_folder(folder_path, classifier, output_path, labels):
         except Exception as e:  
             logging.error(f"Error processing file {file_name}: {e}")  
 
-def evaluate_classifier(classifier, dataset_loader, labels):  
-    total_images = 0  
-    correct_predictions = 0  
+def load_support_dataset(data_path, preprocess_func, num_shots=5):  
+    dataset = WHURS19DatasetLoader(data_path, preprocess_func)  
+    support_images = []  
+    support_labels = []  
+    class_sample_count = {cls: 0 for cls in dataset.classes}  
 
-    for image, ground_truth_label, image_path in dataset_loader:  
-        ground_truth_label = labels[ground_truth_label]  
+    for image, label, _ in dataset:  
+        class_name = dataset.classes[label]  
+        if class_sample_count[class_name] < num_shots:  
+            support_images.append(image)  
+            support_labels.append(class_name)  
+            class_sample_count[class_name] += 1  
+            
+        # Checking if we have enough examples for all classes  
+        if all(count >= num_shots for count in class_sample_count.values()):  
+            break  
 
-        predicted_label, probability = classifier.classify_image(image)  
-        if predicted_label != ground_truth_label:  
-            logging.info(f"image_path: {image_path}\n"  
-                         f"Predicted label: {predicted_label}\n"  
-                         f"Probability: {probability:.2%}\n"  
-                         f"Ground truth label: {ground_truth_label}\n"  
-                         f"{'-'*40}")  
-
-        if predicted_label == ground_truth_label:  
-            correct_predictions += 1  
-        total_images += 1  
-
-    accuracy = correct_predictions / total_images if total_images > 0 else 0  
-    logging.info(f"Total images: {total_images}\n"  
-                 f"Correct predictions: {correct_predictions}\n"  
-                 f"Accuracy: {accuracy:.2%}")  
+    return support_images, support_labels  
 
 if __name__ == "__main__":  
-    ckpt_path = '/home/nw/Codes/RemoteCLIP/checkpoints/RemoteCLIP-ViT-L-14.pt'  
+    ckpt_path = '/home/nw/Codes/RemoteCLIP/checkpoints/RemoteCLIP-ViT-L-14.pt'
+    support_dataset_path = ''
     model_name = 'ViT-L-14'  
     labels=scene_classification_labels
 
     # 构建分类器
-    classifier = RemoteCLIPZeroShotClassifier(ckpt_path, model_name, labels=labels)  
+    classifier = RemoteCLIPFewShotClassifier(ckpt_path, model_name)  
+
+    # 加载support data
+    support_images, support_labels = load_support_dataset(support_dataset_path, classifier.preprocess_func, num_shots=5)  
 
     # 调用分类函数进行分类  
     query_folder_path = '/mnt/d/nw/Datasets/million-AID/test'  
     output_folder_path = '/mnt/d/nw/million-AID-NW'
-    classify_images_in_folder(query_folder_path, classifier, output_folder_path,labels)  
+    classify_images_in_folder(query_folder_path, classifier, support_images, support_labels, output_folder_path)  

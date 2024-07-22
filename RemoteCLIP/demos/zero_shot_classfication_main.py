@@ -74,7 +74,7 @@ def organize_image(image_path, predicted_label, output_path):
     except Exception as e:  
         logging.error(f"Error copying file {file_name} to {destination_path}: {e}")  
 
-def classify_images_in_folder(folder_path, classifier, output_path, labels):  
+def classify_images_in_folder(folder_path, classifier, output_path):  
     """  
     对文件夹中的所有图像进行分类，并将分类结果返回。  
 
@@ -146,9 +146,9 @@ if __name__ == "__main__":
     labels=scene_classification_labels
 
     # 构建分类器
-    classifier = RemoteCLIPZeroShotClassifier(ckpt_path, model_name, labels=labels)  
+    classifier = RemoteCLIPZeroShotClassifier(ckpt_path, model_name, labels=labels)
 
     # 调用分类函数进行分类  
     query_folder_path = '/mnt/d/nw/Datasets/million-AID/test'  
     output_folder_path = '/mnt/d/nw/million-AID-NW'
-    classify_images_in_folder(query_folder_path, classifier, output_folder_path,labels)  
+    classify_images_in_folder(query_folder_path, classifier, output_folder_path)  
