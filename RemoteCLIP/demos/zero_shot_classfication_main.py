@@ -9,8 +9,8 @@ from torch.utils.data import DataLoader
 import shutil  # 新增  
 
 # 添加路径以便于导入自定义数据集加载器和分类器  
-sys.path.append('/home/nw/Codes/DatasetLoader')  
-sys.path.append('/home/nw/Codes/RemoteCLIP/classifiers')  # assuming this is where the classifier files are  
+sys.path.append('/home/nw/Codes/data')  
+sys.path.append('/home/nw/Codes/RemoteCLIP/models/image_classification')  
 from WHURS19_DatasetLoader import WHURS19DatasetLoader  
 from remote_clip_zero_shot_classifier import RemoteCLIPZeroShotClassifier  
 

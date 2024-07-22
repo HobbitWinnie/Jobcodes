@@ -9,8 +9,8 @@ import shutil
 # 取消 PIL 图像尺寸限制  
 Image.MAX_IMAGE_PIXELS = None  
 
-sys.path.append('/home/nw/Codes/DatasetLoader')  
-sys.path.append('/home/nw/Codes/RemoteCLIP/classifiers')  # assuming this is where the classifier files are  
+sys.path.append('/home/nw/Codes/data')  
+sys.path.append('/home/nw/Codes/RemoteCLIP/models/image_classification')  
 
 from WHURS19_DatasetLoader import WHURS19DatasetLoader  
 from MillionAID_Dataset_Loader import MillionAIDDatasetLoader  

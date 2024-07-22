@@ -6,8 +6,8 @@ from torch.utils.data import DataLoader
 from PIL import Image  
 import shutil 
 
-sys.path.append('/home/nw/Codes/DatasetLoader')  
-sys.path.append('/home/nw/Codes/RemoteCLIP/classifiers')  # assuming this is where the classifier files are  
+sys.path.append('/home/nw/Codes/data')  
+sys.path.append('/home/nw/Codes/RemoteCLIP/models/image_classification')  
 
 from WHURS19_DatasetLoader import WHURS19DatasetLoader  
 from remote_clip_classifier_knn import RemoteCLIPClassifierKNN  
