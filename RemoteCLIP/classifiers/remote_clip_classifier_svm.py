@@ -37,11 +37,11 @@ class RemoteCLIPClassifierSVM:
         train_image_features = np.vstack(train_image_features)  
         train_labels = np.array(train_labels)  
 
-        self.svm = SVC(C=C, kernel=kernel, probability=True)  
-        self.svm.fit(train_image_features, train_labels)  
+        self.svc = SVC(C=C, kernel=kernel, probability=True)  
+        self.svc.fit(train_image_features, train_labels)  
 
     def classify_image(self, query_image):  
         query_image = query_image.unsqueeze(0).to(self.device)  
         query_image_features = self.get_image_features(query_image)  
-        predicted_label_index = self.svm.predict(query_image_features)[0]  
-        return predicted_label_index
+        predicted_label_index = self.svc.predict(query_image_features)[0]  
+        return predicted_label_index  

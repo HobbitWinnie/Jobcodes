@@ -1,23 +1,42 @@
 import os  
+from pathlib import Path  
 from PIL import Image  
 from torch.utils.data import Dataset  
 
-class MillionAIDDataset(Dataset):  
+# 数据集类  
+class MillionAIDDatasetLoader(Dataset):  
     def __init__(self, data_path, preprocess_func):  
         self.preprocess_func = preprocess_func  
         self.image_paths = []  
         self.labels = []  
-        self.classes = sorted(os.listdir(data_path))  
+        self.classes = set()  
+
+        # 收集所有可能的标签  
+        self._collect_classes(data_path)  
+
+        self.classes = sorted(self.classes)  
         self.class_to_idx = {cls: idx for idx, cls in enumerate(self.classes)}  
 
-        for cls in self.classes:  
-            class_dir = os.path.join(data_path, cls)  
-            if os.path.isdir(class_dir):  
-                for fname in os.listdir(class_dir):  
-                    if fname.lower().endswith(('.jpg', '.jpeg', '.png', '.bmp')):  
-                        self.image_paths.append(os.path.join(class_dir, fname))  
-                        self.labels.append(self.class_to_idx[cls])  
-        
+        # 打印收集到的标签  
+        print("Collected classes (labels):", self.classes)  
+
+        # 收集图像路径和对应标签  
+        self._collect_image_paths_and_labels(data_path)  
+
+    def _collect_classes(self, path):  
+        for item in Path(path).rglob('*'):  
+            if item.is_dir():  
+                self.classes.add(item.name)  
+
+    def _collect_image_paths_and_labels(self, path):  
+        for item in Path(path).rglob('*.*'):  
+            if item.suffix.lower() in ['.jpg', '.jpeg', '.png', '.bmp']:  
+                parent_dir_name = item.parent.name  
+                if parent_dir_name in self.class_to_idx:  
+                    label_idx = self.class_to_idx[parent_dir_name]  
+                    self.image_paths.append(item)  
+                    self.labels.append(label_idx)  
+
     def __len__(self):  
         return len(self.image_paths)  
 
@@ -27,4 +46,4 @@ class MillionAIDDataset(Dataset):
         image = Image.open(image_path).convert('RGB')  
         image = self.preprocess_func(image)  
 
-        return image, label, image_path  
+        return image, label, str(image_path)  

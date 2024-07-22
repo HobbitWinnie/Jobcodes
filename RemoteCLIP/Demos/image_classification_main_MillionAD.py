@@ -3,24 +3,72 @@ import sys
 import logging  
 from pathlib import Path  
 from torch.utils.data import DataLoader  
-from PIL import Image  
+from PIL import Image, UnidentifiedImageError
 import shutil 
+
+# 取消 PIL 图像尺寸限制  
+Image.MAX_IMAGE_PIXELS = None  
 
 sys.path.append('/home/nw/Codes/DatasetLoader')  
 sys.path.append('/home/nw/Codes/RemoteCLIP/classifiers')  # assuming this is where the classifier files are  
 
 from WHURS19_DatasetLoader import WHURS19DatasetLoader  
+from MillionAID_Dataset_Loader import MillionAIDDatasetLoader  
+
 from remote_clip_classifier_knn import RemoteCLIPClassifierKNN  
 from remote_clip_classifier_svm import RemoteCLIPClassifierSVM  
 from remote_clip_classifier_rf import RemoteCLIPClassifierRF  
 
-# 定义16类标签列表  
-WHURS19_labels = [  
-    "Airport", "Beach", "Bridge", "Commercial", "Desert",  
-    "Farmland", "Forest", "Industrial", "Meadow", "Mountain",  
-    "Park", "Parking", "Pond", "Port", "Residential",  
-    "River", "Viaduct", "footballField", "railwayStation"  
-]  
+# 定义类标签列表  
+LABELS_8_CLASSES=[
+    "agriculture land","commercial land","industrial land",
+    "public service land","residential land",
+    "transportation land","unutilized land","water area"
+    ]
+
+LABELS_16_CLASSES=[
+    "arable land","grassland","woodland","commercial area",
+    "factory area","mining area","power station","sports land",
+    "detached house","airport area","highway area","port area",
+    "railway area","bare land","lake","river"]
+
+ALL_CLASSES = [
+    'agriculture_land', 'airport_area', 'apartment', 'apron', 
+    'arable_land', 'bare_land', 'baseball_field', 'basketball_court', 
+    'beach', 'bridge', 'cemetery', 'church', 'commercial_area', 
+    'commercial_land', 'dam', 'desert', 'detached_house', 'dry_field', 
+    'factory_area', 'forest', 'golf_course', 'grassland', 'greenhouse',
+    'ground_track_field', 'helipad', 'highway_area', 'ice_land', 
+    'industrial_land', 'intersection', 'island', 'lake', 'leisure_land', 
+    'meadow', 'mine', 'mining_area', 'mobile_home_park', 'oil_field', 
+    'orchard', 'paddy_field', 'parking_lot', 'pier', 'port_area', 
+    'power_station', 'public_service_land', 'quarry', 'railway', 
+    'railway_area', 'religious_land', 'residential_land', 'river', 
+    'road', 'rock_land', 'roundabout', 'runway', 'solar_power_plant', 
+    'sparse_shrub_land', 'special_land', 'sports_land', 'stadium', 
+    'storage_tank', 'substation', 'swimming_pool', 'tennis_court', 
+    'terraced_field', 'train_station', 'transportation_land', 
+    'unutilized_land', 'viaduct', 'wastewater_plant', 'water_area', 
+    'wind_turbine', 'woodland', 'works'
+    ]
+
+scene_classification_labels = [  
+    'agricultural_land',  
+    'residential_area',  
+    'commercial_area',  
+    'industrial_area',  
+    'water_body',  
+    'forest',  
+    'desert',  
+    'bare_land',  
+    'grassland',  
+    'airport',  
+    'bridge',  
+    'port',  
+    'transportation_network',  
+    'urban_green_space',  
+    'power_infrastructure'  
+] 
 
 # 配置日志  
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')  
@@ -93,8 +141,8 @@ def classify_images_in_folder(folder_path, classifier, labels, output_path = Non
         classified_images.append((image_path, predicted_label))  
 
     organize_images(classified_images, labels=labels, output_path=output_path)
- 
 
+            
 def main(data_path, ckpt_path, query_folder_path, batch_size=32, model_type='svm', num_workers=4, labels=None, output_path = None):  
     if model_type == 'knn':  
         classifier = RemoteCLIPClassifierKNN(ckpt_path=ckpt_path)  
@@ -105,8 +153,8 @@ def main(data_path, ckpt_path, query_folder_path, batch_size=32, model_type='svm
     else:  
         raise ValueError("Unsupported model type. Choose 'knn', 'svm', or 'rf'.")  
 
-    whurs19_dataset = WHURS19DatasetLoader(data_path=data_path, preprocess_func=classifier.preprocess_func)  
-    dataloader = DataLoader(whurs19_dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers)  
+    millionAIDD_dataset = WHURS19DatasetLoader(data_path=data_path, preprocess_func=classifier.preprocess_func)  
+    dataloader = DataLoader(millionAIDD_dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers)  
 
     if model_type == 'knn':  
         classifier.fit_knn(dataloader, n_neighbors=20)  
@@ -115,16 +163,18 @@ def main(data_path, ckpt_path, query_folder_path, batch_size=32, model_type='svm
     elif model_type == 'rf':  
         classifier.fit_rf(dataloader, n_estimators=100, max_depth=None)  
 
-    classify_images_in_folder(query_folder_path, classifier, labels,output_path=output_path)  
-    # evaluate_classifier(classifier, whurs19_dataset, labels)  
+    classify_images_in_folder(query_folder_path, classifier, labels, output_path )  
+    # evaluate_classifier(classifier, millionAIDD_dataset, labels)  
+
 
 if __name__ == "__main__":  
-    data_path ='/mnt/d/nw/Datasets/Classification-12/WHU-RS19'  
+    data_path = '/mnt/d/nw/million-AID-NW' 
     ckpt_path = '/home/nw/Codes/RemoteCLIP/checkpoints/RemoteCLIP-ViT-L-14.pt'  
+    # query_folder_path = '/home/nw/Codes/RemoteCLIP/assets/GF2_Selected_50'  
 
     # 调用分类函数进行分类  
     query_folder_path = '/mnt/d/nw/Datasets/GF2_Data/data'  
-    output_folder_path = '/mnt/d/nw/Datasets/GF2_Data/svm_results/WHURS19_labels'
+    output_folder_path = '/mnt/d/nw/Datasets/GF2_Data/rf_results/LABELS_17_Scene_CLASSES'
 
-    labels = WHURS19_labels  
-    main(data_path, ckpt_path, query_folder_path, model_type='svm', labels=labels, output_path=output_folder_path)  # 可替换 'svm' 为 'knn' 或 'rf'  
+    labels = scene_classification_labels  
+    main(data_path, ckpt_path, query_folder_path, model_type='rf', labels=labels, output_path=output_folder_path)  # 可替换 'svm' 为 'knn' 或 'rf'  

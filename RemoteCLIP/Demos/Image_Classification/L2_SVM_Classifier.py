@@ -13,13 +13,12 @@ sys.path.append('/home/nw/Codes/DatasetLoader')
 from WHURS19_DatasetLoader import WHURS19DatasetLoader  
 
 # 定义新的标签列表  
-LABELS_16_CLASSES = [  
-    "arable land","grassland","woodland","commercial area","factory area",
-    "mining area","power station","sports land","detached house",
-    "airport area","highway area","port area",
-    "railway area","bare land","lake","river"
+labels = [  
+    "Airport", "Beach", "Bridge", "Commercial", "Desert",  
+    "Farmland", "Forest", "Industrial", "Meadow", "Mountain",  
+    "Park", "Parking", "Pond", "Port", "Residential",  
+    "River", "Viaduct", "footballField", "railwayStation"  
 ]  
-
 # 配置日志  
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')  
 
@@ -61,7 +60,7 @@ class RemoteCLIPClassifier:
         self.svc = SVC(C=C, kernel=kernel, probability=True)  
         self.svc.fit(train_image_features, train_labels)  
 
-    def classify_image(self, query_image):  
+    def classify_image(self, query_image, labels):  
         query_image = query_image.unsqueeze(0).to(self.device)  
         query_image_features = self.get_image_features(query_image)  
 
@@ -70,14 +69,14 @@ class RemoteCLIPClassifier:
 
         return predicted_label  
 
-def evaluate_classifier(classifier, dataset):  
+def evaluate_classifier(classifier, dataset, labels):  
     total_images = 0  
     correct_predictions = 0  
 
     for image, ground_truth_label, _ in dataset:  
         ground_truth_label = labels[ground_truth_label]  # 使用标签索引将其映射回标签  
 
-        predicted_label = classifier.classify_image(image)  
+        predicted_label = classifier.classify_image(image,labels)  
         if predicted_label == ground_truth_label:  
             correct_predictions += 1  
         total_images += 1  
@@ -115,9 +114,9 @@ def main(data_path, ckpt_path, query_folder_path, batch_size=32, num_workers=4):
 
     classifier.fit_svc(dataloader, C=1.0, kernel='linear')  
 
-    classify_images_in_folder(query_folder_path, classifier)
+    # classify_images_in_folder(query_folder_path, classifier)
 
-    evaluate_classifier(classifier, WHURS19_dataset)  
+    evaluate_classifier(classifier, WHURS19_dataset,labels=labels)  
 
 if __name__ == "__main__":  
     data_path ='/mnt/d/nw/Datasets/Classification-12/WHU-RS19'  

@@ -35,9 +35,6 @@ class RemoteCLIPZeroShotClassifier:
         with torch.no_grad():  
             similarities = (100.0 * image_features @ self.label_text_features.T).softmax(dim=-1)  
             top_probs, top_labels = similarities.cpu().topk(1, dim=-1)  
-        #     label = top_labels.item()  
-        #     prob = top_probs.item()  
-        # return self.label_texts[label], prob  # 返回概率和标签
             label_index = top_labels.item()  
             prob = top_probs.item()  
             label = self.label_texts[label_index]  
