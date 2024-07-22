@@ -4,3 +4,7 @@ RemoteCLIP/checkpoints/
 RemoteCLIP/cache/
 
 OLMo/
+
+# .gitignore  
+__pycache__/  
+*.pyc
