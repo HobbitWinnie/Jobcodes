@@ -1,12 +1,11 @@
-
 import os  
 import sys  
 import torch  
 from torch import nn, optim  
 import numpy as np  
 import pandas as pd  
-import open_clip
-from PIL import Image
+import open_clip  
+from PIL import Image  
 from sklearn.metrics import f1_score, average_precision_score, roc_auc_score  
 from torch.optim.lr_scheduler import StepLR  
 
@@ -18,6 +17,7 @@ class MultiLabelClassifier:
     def __init__(self, ckpt_path, model_name='ViT-L-14', device=None):  
         self.model_name = model_name  
         self.device = device if device else ('cuda' if torch.cuda.is_available() else 'cpu')  
+        print(f"Running on device: {self.device}")  
 
         self.model, _, preprocess_func = open_clip.create_model_and_transforms(self.model_name)  
         self.preprocess_func = preprocess_func  
@@ -37,9 +37,18 @@ class MultiLabelClassifier:
         image_features /= image_features.norm(dim=-1, keepdim=True)  
         return image_features  
 
-    def train_model(self, dataloader, num_labels, num_epochs=256, lr=1e-4, loss_type='bce', **kwargs):  
-        self.fc = nn.Linear(self.model.visual.output_dim, num_labels).to(self.device)  
-        
+    def train_model(self, dataloader, num_labels, num_epochs=2, lr=1e-4, loss_type='bce', **kwargs):  
+        output_dim = self.model.module.visual.output_dim if isinstance(self.model, torch.nn.parallel.DistributedDataParallel) else self.model.visual.output_dim  
+
+        # 添加新的全连接层  
+        self.fc = nn.Sequential(  
+            nn.Linear(output_dim, 512),  
+            nn.ReLU(),  
+            nn.Linear(512, 256),  
+            nn.ReLU(),  
+            nn.Linear(256, num_labels)  
+        ).to(self.device)  
+
         if loss_type == 'bce':  
             criterion = nn.BCEWithLogitsLoss()  
         elif loss_type == 'focal':  
@@ -47,39 +56,41 @@ class MultiLabelClassifier:
         elif loss_type == 'dice':  
             criterion = DiceLoss()  
         elif loss_type == 'label_smoothing':  
-            criterion = LabelSmoothingLoss(classes=num_labels, **kwargs)  
+            criterion = LabelSmoothingLoss(classes=num_labels)  
         else:  
             raise ValueError("Unsupported loss type. Choose from 'bce', 'focal', 'dice', 'label_smoothing'.")  
-
+        
         self.optimizer = optim.AdamW(self.fc.parameters(), lr=lr)  
-        scheduler = StepLR(self.optimizer, step_size=5, gamma=0.1)  # 学习率调度器  
-
-        scaler = torch.cuda.amp.GradScaler()  # Initialize gradient scaler for mixed precision training  
-
+        scheduler = StepLR(self.optimizer, step_size=5, gamma=0.1)  
+        scaler = torch.cuda.amp.GradScaler()  
+        
         self.fc.train()  
         for epoch in range(num_epochs):  
             total_loss = 0.0  
-            for images, targets, _ in dataloader:  
+            for i, (images, targets, _) in enumerate(dataloader):  
                 images = images.to(self.device)  
                 targets = targets.to(self.device).float()  
-
+                
                 self.optimizer.zero_grad()  
-
+                
                 with torch.cuda.amp.autocast():  
                     features = self.get_image_features(images)  
                     outputs = self.fc(features)  
                     loss = criterion(outputs, targets)  
-
+                
                 scaler.scale(loss).backward()  
                 scaler.step(self.optimizer)  
                 scaler.update()  
+                
+                total_loss += loss.item()                 
+  
+            scheduler.step()  
 
-                total_loss += loss.item()  
+            # 每隔10次打印一次训练信息和精度   
+            if (epoch + 1) % 10 == 0:  
+                print(f"Epoch [{epoch+1}/{num_epochs}], Average Loss: {total_loss/len(dataloader):.4f}")  
 
-            scheduler.step()  # 调整学习率  
-            print(f"Epoch {epoch+1}/{num_epochs}, Loss: {total_loss/len(dataloader)}")  
-
-
+            
     def evaluate_model(self, dataloader):  
         self.fc.eval()  
         all_targets = []  
@@ -123,7 +134,13 @@ class MultiLabelClassifier:
         checkpoint = torch.load(path)  
         self.model.load_state_dict(checkpoint['model_state_dict'])  
 
-        self.fc = nn.Linear(self.model.visual.output_dim, num_labels).to(self.device)  
+        self.fc = nn.Sequential(  
+            nn.Linear(self.model.visual.output_dim, 512),  
+            nn.ReLU(),  
+            nn.Linear(512, 256),  
+            nn.ReLU(),  
+            nn.Linear(256, num_labels)  
+        ).to(self.device)  
         self.fc.load_state_dict(checkpoint['fc_state_dict'])  
 
         # 重新初始化优化器  
@@ -152,4 +169,4 @@ class MultiLabelClassifier:
         
         df = pd.DataFrame(all_predictions, columns=[f'label{i}' for i in range(len(all_predictions[0]))])  
         df['image_path'] = image_paths  
-        df.to_csv(output_csv, index=False)  
+        df.to_csv(output_csv, index=False)

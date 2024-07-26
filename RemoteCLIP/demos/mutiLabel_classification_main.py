@@ -18,13 +18,13 @@ def train_and_evaluate(classifier, dataloader, num_labels, epoch_num, save_path)
         classifier.train_model(  
             dataloader,   
             num_labels,   
-            num_epochs=256, 
+            num_epochs=256,  
             lr=1e-4,   
-            loss_type='dice',  # 提供了4种loss function 'bce', 'focal', 'dice', 'label_smoothing'. 
-            alpha=1,   
+            loss_type='dice', # 可选的4种loss 'bce', 'focal', 'dice', 'label_smoothing'(暂时不可用).  
+            alpha=1,  
             gamma=2  
-        )  
-        
+        )          
+
         f1, average_precision, roc_auc = classifier.evaluate_model(dataloader)  
         
         if f1 > best_f1:  
@@ -32,10 +32,10 @@ def train_and_evaluate(classifier, dataloader, num_labels, epoch_num, save_path)
             classifier.save_model(save_path)  # 保存最佳模型  
         
         print(f"Epoch {epoch}/{epoch_num}, "   
-              f"F1: {f1:.6f}, Average Precision: {average_precision:.6f}, "  
-              f"ROC-AUC: {roc_auc:.6f}")   
-
-    classifier.load_model(save_path, num_labels)  # 恢复最佳模型，增加 num_labels 参数   
+              f"F1: {f1:.6f}, Average Precision: {average_precision:.6f}, "   
+              f"ROC-AUC: {roc_auc:.6f}")  
+        
+    classifier.load_model(save_path, num_labels)  # 恢复最佳模型，增加 num_labels 参数
    
 def main(image_folder_path, csv_path, ckpt_path, query_folder, output_csv, model_save_path, batch_size=32, epoch_num=10):  
     # initial classifier  

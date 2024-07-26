@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn  
 import torch.nn.functional as F  
 
+
 class FocalLoss(nn.Module):  
     """  
     Focal Loss是一种改进的交叉熵损失 用于处理不平衡类别问题, 
@@ -34,6 +35,7 @@ class FocalLoss(nn.Module):
         else:  
             return F_loss  
 
+
 class DiceLoss(nn.Module):  
     """  
     Dice Loss 主要用于语义分割，但对于多标签分类任务同样有效, 通过测量预测结果和真实标签之间的重叠面积来优化模型。
@@ -56,10 +58,10 @@ class DiceLoss(nn.Module):
         
         return 1 - dice  
 
+
 class LabelSmoothingLoss(nn.Module):  
     """  
     标签平滑损失用于减轻模型对训练数据的过拟合。  
-    
     参数:  
     - classes: 类别数目。  
     - smoothing: 平滑因子，减少置信度过高的预测。  
@@ -73,9 +75,16 @@ class LabelSmoothingLoss(nn.Module):
 
     def forward(self, output, target):  
         batch_size, num_classes = output.size()  
+        
         # 创建一个平滑标签张量  
-        smooth_label = torch.full((batch_size, num_classes), self.smoothing / (num_classes-1)).to(output.device)  
-        # 将目标标记的索引位置设为置信度  
-        target_one_hot = smooth_label.scatter(1, target.unsqueeze(1), self.confidence)  
-        output = F.log_softmax(output, dim=1)  
-        return self.criterion(output, target_one_hot)
+        smooth_label = torch.full(size=(batch_size, num_classes), fill_value=self.smoothing / (num_classes - 1)).to(output.device)  
+        
+        # 将目标标记的索引位置设为置信度，并确保target是int64类型并且扩展维度  
+        target = target.long().unsqueeze(1)  # 确保target是int64类型并且增加一个维度  
+        target_one_hot = smooth_label.scatter(1, target, self.confidence)  
+        
+        # 转换输出为log_softmax  
+        output = torch.log_softmax(output, dim=1)  
+        
+        # 计算损失  
+        return self.criterion(output, target_one_hot)  
