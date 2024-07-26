@@ -11,6 +11,7 @@ import shutil  # 新增
 # 添加路径以便于导入自定义数据集加载器和分类器  
 sys.path.append('/home/nw/Codes/data')  
 sys.path.append('/home/nw/Codes/RemoteCLIP/models/image_classification')  
+
 from WHURS19_DatasetLoader import WHURS19DatasetLoader  
 from remote_clip_zero_shot_classifier import RemoteCLIPZeroShotClassifier  
 
@@ -31,23 +32,6 @@ LABELS_8_CLASSES=[
     "transportation land","unutilized land","water area"
     ]
 
-scene_classification_labels = [  
-    'agricultural_land',  
-    'residential_area',  
-    'commercial_area',  
-    'industrial_area',  
-    'water_body',  
-    'forest',  
-    'desert',  
-    'bare_land',  
-    'grassland',  
-    'airport',  
-    'bridge',  
-    'port',  
-    'transportation_network',  
-    'urban_green_space',  
-    'power_infrastructure'  
-]  
 
 def organize_image(image_path, predicted_label, output_path):  
     """  
