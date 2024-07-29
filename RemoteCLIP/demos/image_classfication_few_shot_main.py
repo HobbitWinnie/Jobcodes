@@ -13,8 +13,7 @@ sys.path.append('/home/nw/Codes/data')
 sys.path.append('/home/nw/Codes/RemoteCLIP/models/image_classification')  
 
 from WHURS19_DatasetLoader import WHURS19DatasetLoader  
-from remote_clip_few_shot_classifier import RemoteCLIPFewShotClassifier  
-
+from remote_clip_few_shot import RemoteCLIPFewShotClassifier  
 
 
 # 配置日志  

@@ -2,7 +2,9 @@ import torch
 import numpy as np  
 from sklearn.ensemble import RandomForestClassifier  
 import open_clip  
-
+from PIL import Image  
+import pandas as pd  
+import os  
 
 class RemoteCLIPClassifierRF:  
     def __init__(self, ckpt_path, model_name='ViT-L-14', device=None):  
@@ -19,6 +21,8 @@ class RemoteCLIPClassifierRF:
         self.model = self.model.to(self.device).eval()  
 
         self.rf = None  
+        self.classes = None  # 用于存储类名  
+        self.label_to_index = None  # 用于标签名和索引的映射  
 
     def get_image_features(self, images):  
         images = images.to(self.device)  
@@ -33,15 +37,41 @@ class RemoteCLIPClassifierRF:
         for images, labels, paths in dataloader:  
             features = self.get_image_features(images)  
             train_image_features.append(features)  
-            train_labels.extend(labels.numpy())  
+            train_labels.extend(labels)  
+
         train_image_features = np.vstack(train_image_features)  
         train_labels = np.array(train_labels)  
 
+        # 获取类名和标签到索引的映射  
+        self.classes = sorted(set(train_labels))  
+        self.label_to_index = {label: idx for idx, label in enumerate(self.classes)}  
+        train_label_indices = np.array([self.label_to_index[label] for label in train_labels])  
+
         self.rf = RandomForestClassifier(n_estimators=n_estimators, max_depth=max_depth)  
-        self.rf.fit(train_image_features, train_labels)  
+        self.rf.fit(train_image_features, train_label_indices)  
 
     def classify_image(self, query_image):  
-        query_image = query_image.unsqueeze(0).to(self.device)  
+        query_image = query_image.to(self.device)  
         query_image_features = self.get_image_features(query_image)  
-        predicted_label_index = self.rf.predict(query_image_features)[0]  
-        return predicted_label_index
+
+        # 获取预测概率  
+        probabilities = self.rf.predict_proba(query_image_features)[0]  
+        sorted_indices = np.argsort(probabilities)[::-1]  # 按概率排序  
+        top_3_indices = sorted_indices[:3]  
+
+        # 获取对应的标签及概率  
+        top_3_labels = [(self.classes[i], probabilities[i]) for i in top_3_indices]  
+        return top_3_labels  
+    
+    def classify_images_in_folder(self, folder_path, output_csv):  
+        results = []  
+        for img_name in os.listdir(folder_path):  
+            img_path = os.path.join(folder_path, img_name)  
+            if img_path.lower().endswith(('.png', '.jpg', '.jpeg', '.bmp', '.gif')):  
+                image = Image.open(img_path).convert("RGB")  
+                image = self.preprocess_func(image).unsqueeze(0)  
+                top_3_labels = self.classify_image(image)  
+                results.append({"filename": img_name, "top_3_labels": top_3_labels})  
+
+        df = pd.DataFrame(results)  
+        df.to_csv(output_csv, index=False)  

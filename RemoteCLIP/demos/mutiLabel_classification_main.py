@@ -7,9 +7,8 @@ sys.path.append('/home/nw/Codes/data')
 sys.path.append('/home/nw/Codes/RemoteCLIP/src/image_classification')  
 
 # 导入自定义类  
-from MultiLabel_Dataset_Loader import MultiLabelDatasetLoader  
 from MultiLabel_CSV_Loader import MultiLabelCSVLoader  
-from remoteclip_multilabel_classifier import MultiLabelClassifier  
+from remoteclip_multilabel import MultiLabelClassifier  
 
 
 def train_and_evaluate(classifier, dataloader, num_labels, epoch_num, save_path):  
@@ -20,7 +19,7 @@ def train_and_evaluate(classifier, dataloader, num_labels, epoch_num, save_path)
             num_labels,   
             num_epochs=256,  
             lr=1e-4,   
-            loss_type='dice', # 可选的4种loss 'bce', 'focal', 'dice', 'label_smoothing'(暂时不可用).  
+            loss_type='bce', # 可选的4种loss 'bce', 'focal', 'dice', 'label_smoothing'(暂时不可用).  
             alpha=1,  
             gamma=2  
         )          
@@ -37,20 +36,6 @@ def train_and_evaluate(classifier, dataloader, num_labels, epoch_num, save_path)
         
     classifier.load_model(save_path, num_labels)  # 恢复最佳模型，增加 num_labels 参数
    
-def main(image_folder_path, csv_path, ckpt_path, query_folder, output_csv, model_save_path, batch_size=32, epoch_num=10):  
-    # initial classifier  
-    classifier = MultiLabelClassifier(ckpt_path=ckpt_path)  
-
-    # load data  
-    train_dataset = MultiLabelCSVLoader(csv_path, preprocess_func=classifier.preprocess_func)  
-    dataloader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)  
-
-    # Train and evaluate the model  
-    num_labels = len(os.listdir(image_folder_path))  # Number of label directories  
-    train_and_evaluate(classifier, dataloader, num_labels, epoch_num, model_save_path)  
-
-    # Classify images in a folder  
-    classifier.classify_images_from_folder(query_folder, output_csv)  
 
 
 if __name__ == "__main__":  
@@ -63,4 +48,18 @@ if __name__ == "__main__":
     output_csv_path = '/mnt/d/nw/GF2_Data/26/result.csv'  
     model_save_path = '/home/nw/Codes/RemoteCLIP/cache/models/best_model.pth'  # 指定模型保存路径  
 
-    main(image_folder_path, csv_path, ckpt_path, query_folder, output_csv_path, model_save_path, batch_size=32, epoch_num=1000)
+    # initial classifier  
+    classifier = MultiLabelClassifier(ckpt_path=ckpt_path)  
+
+    # load data  
+    train_dataset = MultiLabelCSVLoader(csv_path, preprocess_func=classifier.preprocess_func)  
+    dataloader = DataLoader(train_dataset, batch_size=32, shuffle=True)  
+
+    # Train and evaluate the model  
+    num_labels = len(os.listdir(image_folder_path))  # Number of label directories  
+    epoch_num=10
+    train_and_evaluate(classifier, dataloader, num_labels, epoch_num, model_save_path)  
+
+    # Classify images in a folder  
+    classifier.classify_images_from_folder(query_folder, output_csv_path) 
+

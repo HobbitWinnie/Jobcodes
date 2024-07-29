@@ -1,6 +1,8 @@
 import torch  
 import open_clip  
-
+from PIL import Image  
+import pandas as pd  
+import os 
 
 class RemoteCLIPZeroShotClassifier:  
     def __init__(self, ckpt_path, model_name='ViT-L-14', labels=None, device=None):  
@@ -39,3 +41,16 @@ class RemoteCLIPZeroShotClassifier:
             prob = top_probs.item()  
             label = self.label_texts[label_index]  
         return label, prob  # 返回标签字符串和概率  
+    
+    def classify_images_in_folder(self, folder_path, output_csv):  
+        results = []  
+        for img_name in os.listdir(folder_path):  
+            img_path = os.path.join(folder_path, img_name)  
+            if img_path.lower().endswith(('.png', '.jpg', '.jpeg', '.bmp', '.gif')):  
+                image = Image.open(img_path).convert("RGB")  
+                image = self.preprocess_func(image).unsqueeze(0)  
+                label, prob = self.classify_image(image)  
+                results.append({"filename": img_name, "label": label, "prob": prob})  
+
+        df = pd.DataFrame(results)  
+        df.to_csv(output_csv, index=False) 
