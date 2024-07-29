@@ -32,7 +32,7 @@ scene_classification_labels = [
     'airport',  
     'bridge',  
     'port',  
-    'transportation_network',  
+    'transportation_nestwork',  
     'urban_green_space',  
     'power_infrastructure'  
 ]  
