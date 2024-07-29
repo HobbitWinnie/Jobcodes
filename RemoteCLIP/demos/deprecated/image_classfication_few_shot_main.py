@@ -19,19 +19,6 @@ from remote_clip_few_shot import RemoteCLIPFewShotClassifier
 # 配置日志  
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')  
 
-LABELS_16_CLASSES = [  
-    "arable land", "grassland", "woodland", "commercial area", "factory area",  
-    "mining area", "power station", "sports land", "detached house",  
-    "airport area", "highway area", "port area",  
-    "railway area", "bare land", "lake", "river"  
-]  
-
-LABELS_8_CLASSES=[
-    "agriculture land","commercial land","industrial land",
-    "public service land","residential land",
-    "transportation land","unutilized land","water area"
-    ]
-
 scene_classification_labels = [  
     'agricultural_land',  
     'residential_area',  
