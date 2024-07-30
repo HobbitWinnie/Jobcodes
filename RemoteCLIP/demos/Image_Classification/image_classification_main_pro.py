@@ -91,7 +91,6 @@ if __name__ == "__main__":
         dataloader = DataLoader(dataset, batch_size=32, shuffle=False, num_workers=4)
         classifier.fit_rank_svm(dataloader)  
 
-
     else:  
         raise ValueError("Unsupported model type. Choose 'knn', 'svm', or 'rf'.")  
 

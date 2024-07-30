@@ -7,6 +7,7 @@ import open_clip
 from PIL import Image  
 import pandas as pd  
 import os  
+from sklearn.preprocessing import StandardScaler  
 
 class RemoteCLIPClassifierRankSVM:  
     def __init__(self, ckpt_path, model_name='ViT-L-14', device=None):  
@@ -36,7 +37,7 @@ class RemoteCLIPClassifierRankSVM:
         train_image_features = []  
         train_labels = []  
         
-        for images, labels in dataloader:  
+        for images, labels, _ in dataloader:  
             features = self.get_image_features(images)  
             train_image_features.append(features)  
             train_labels.extend(labels)  
@@ -50,7 +51,10 @@ class RemoteCLIPClassifierRankSVM:
         
         pairs_train, pairs_label = self._create_pairs(train_image_features, binarized_labels)  
 
+        scaler = StandardScaler()  
         pairs_train = pairs_train.astype(np.float32)  # 确保 32-bit 浮点  
+        pairs_train = scaler.fit_transform(pairs_train)  
+
         pairs_label = pairs_label.astype(np.int8)  # 确保标签为 8-bit 整数  
 
         self.rank_svm = LinearSVC(C=C)  
