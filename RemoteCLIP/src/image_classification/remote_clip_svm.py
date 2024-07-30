@@ -34,8 +34,8 @@ class RemoteCLIPClassifierSVM:
     def fit_svm(self, dataloader, C=1.0, kernel='linear'):  
         train_image_features = []  
         train_labels = []  
-        for images, labels, paths in dataloader:  
-            features = self.get_image_features(images)  
+        for processed_images, labels, _ in dataloader:  
+            features = self.get_image_features(processed_images)  
             train_image_features.append(features)  
             train_labels.extend(labels)  # 无需转换为 numpy 数组  
         train_image_features = np.vstack(train_image_features)  
@@ -74,3 +74,4 @@ class RemoteCLIPClassifierSVM:
 
         df = pd.DataFrame(results)  
         df.to_csv(output_csv, index=False)  
+        print(f"Results saved to `{output_csv}`")  

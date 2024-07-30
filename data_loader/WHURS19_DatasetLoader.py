@@ -28,6 +28,8 @@ class WHURS19DatasetLoader(Dataset):
         image_path = self.image_paths[idx]
         label = self.labels[idx]
         image = Image.open(image_path).convert('RGB')
-        image = self.preprocess_func(image)  
+        processed_image = self.preprocess_func(image)  
+        
+        return processed_image, label, image_path
 
-        return image, label, image_path
+        # return processed_image, label, image, image_path #这一行是few-shot加载support dataset时修改的

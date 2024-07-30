@@ -1,5 +1,10 @@
 import torch  
 import open_clip  
+from PIL import Image  
+import pandas as pd  
+import os  
+from torch.utils.data import Dataset  
+
 
 class RemoteCLIPFewShotClassifier:  
     def __init__(self, ckpt_path, model_name='ViT-L-14', device=None):  
@@ -13,6 +18,9 @@ class RemoteCLIPFewShotClassifier:
         # Load model checkpoint  
         self.model.load_state_dict(torch.load(ckpt_path, map_location=self.device))  
         self.model = self.model.to(self.device).eval()  
+        
+        self.support_images = []  
+        self.support_labels = []  
 
     def _get_text_features(self, texts):  
         tokenized_texts = self.tokenizer(texts).to(self.device)  
@@ -25,21 +33,29 @@ class RemoteCLIPFewShotClassifier:
         with torch.no_grad(), torch.cuda.amp.autocast():  
             image_features = self.model.encode_image(images)  
         return image_features / image_features.norm(dim=-1, keepdim=True)  
+    
+    def load_support_dataset(self, dataset, num_shots=5):  
+        class_sample_count = {cls: 0 for cls in dataset.classes}  
+        for _, label, image, _ in dataset:  
+            if class_sample_count[label] < num_shots:  
+                self.support_images.append(image)  # 保存原始的 PIL 图像  
+                self.support_labels.append(label)  
+                class_sample_count[label] += 1  
+            if all(count >= num_shots for count in class_sample_count.values()):  
+                break  
 
-    def few_shot_classify(self, support_images, support_labels, query_image):  
+    def few_shot_classify(self, query_image):  
         """  
-        support_images: List of PIL Images, few-shot examples.  
-        support_labels: List of corresponding labels for the support_images.  
-        query_image: A single image (pil) to classify.  
+        Classify a query image based on the support images and labels using few-shot learning.  
         """  
-
         # Feature extraction for the support set  
-        support_image_features = self._get_image_features(support_images).to(torch.float32)  
-        support_text_features = self._get_text_features(support_labels).to(torch.float32)  
-
+        support_image_features = self._get_image_features(self.support_images).to(torch.float32)  
+        support_text_features = self._get_text_features(self.support_labels).to(torch.float32)  
+        
         # Feature extraction for the query image  
-        query_image = self.preprocess_func(query_image).unsqueeze(0).to(self.device)  
-        query_image_features = self._get_image_features([query_image]).to(torch.float32)  
+        query_image = self.preprocess_func(query_image).unsqueeze(0).to(self.device)  # 预处理并转为 tensor  
+        with torch.no_grad(), torch.cuda.amp.autocast():  
+            query_image_features = self.model.encode_image(query_image).to(torch.float32)  
 
         # Calculate similarities between query image and support set  
         with torch.no_grad():  
@@ -49,10 +65,35 @@ class RemoteCLIPFewShotClassifier:
             # Combine similarities (simple addition)  
             combined_similarities = (image_similarities + text_similarities).softmax(dim=-1)  
 
-            # Get top prediction  
-            top_probs, top_labels = combined_similarities.cpu().topk(1, dim=-1)  
-            label_index = top_labels.item()  
-            prob = top_probs.item()  
-            label = support_labels[label_index]  
+            # Get top 3 predictions  
+            top_probs, top_labels = combined_similarities.cpu().topk(3, dim=-1)  
+            top_labels = top_labels.squeeze().tolist()  
+            top_probs = top_probs.squeeze().tolist()  
+            top_labels = [self.support_labels[idx] for idx in top_labels]  
 
-        return label, prob  
+        return top_labels, top_probs  
+
+    def classify_images_in_folder(self, folder_path, output_csv):  
+        if not os.path.exists(folder_path):  
+            print(f"Error: Folder `{folder_path}` does not exist.")  
+            return  
+
+        results = []  
+        for img_name in os.listdir(folder_path):  
+            img_path = os.path.join(folder_path, img_name)  
+            if img_path.lower().endswith(('.png', '.jpg', '.jpeg', '.bmp', '.gif')):  
+                query_image = Image.open(img_path).convert("RGB")  # 确保是 PIL 图像  
+                top_labels, top_probs = self.few_shot_classify(query_image)  
+                results.append({  
+                    "filename": img_name,  
+                    "top1_label": top_labels[0], "top1_prob": top_probs[0],  
+                    "top2_label": top_labels[1], "top2_prob": top_probs[1],  
+                    "top3_label": top_labels[2], "top3_prob": top_probs[2]  
+                })  
+
+        if results:  
+            df = pd.DataFrame(results)  
+            df.to_csv(output_csv, index=False)  
+            print(f"Results saved to `{output_csv}`")  
+        else:  
+            print("No valid images found to classify.")

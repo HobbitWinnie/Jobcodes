@@ -36,10 +36,10 @@ class RemoteCLIPClassifierRankSVM:
         train_image_features = []  
         train_labels = []  
         
-        for images, labels, paths in dataloader:  
+        for images, labels in dataloader:  
             features = self.get_image_features(images)  
             train_image_features.append(features)  
-            train_labels.extend(labels.numpy())  
+            train_labels.extend(labels)  
         
         train_image_features = np.vstack(train_image_features)  
         train_labels = np.array(train_labels)  
@@ -50,12 +50,15 @@ class RemoteCLIPClassifierRankSVM:
         
         pairs_train, pairs_label = self._create_pairs(train_image_features, binarized_labels)  
 
+        pairs_train = pairs_train.astype(np.float32)  # 确保 32-bit 浮点  
+        pairs_label = pairs_label.astype(np.int8)  # 确保标签为 8-bit 整数  
+
         self.rank_svm = LinearSVC(C=C)  
-        self.rank_svm.fit(pairs_train, pairs_label)  
+        self.rank_svm.fit(pairs_train, pairs_label)
 
     def _create_pairs(self, X, y):  
         """  
-        Create pairs for rank SVM  
+        Create pairs for rank SVM.  
         """  
         pairs = []  
         targets = []  
@@ -69,19 +72,19 @@ class RemoteCLIPClassifierRankSVM:
                     label_diff = y[i] - y[j]  
                     for k in range(len(label_diff)):  
                         if label_diff[k] != 0:  
-                            pairs.append(diff)  
+                            pairs.append(diff.astype(np.float32))  # 确保转换为 32-bit 浮点  
                             targets.append(np.sign(label_diff[k]))  
 
         pairs, targets = shuffle(pairs, targets)  
-        return np.array(pairs), np.array(targets)  
+        return np.array(pairs, dtype=np.float32), np.array(targets, dtype=np.int8)  # 确保对和标签类型
 
     def classify_image(self, query_image):  
-        query_image = query_image.unsqueeze(0).to(self.device)  
-        query_image_features = self.get_image_features(query_image)  
+        query_image = query_image.to(self.device)  
+        query_image_features = self.get_image_features(query_image.unsqueeze(0))  
         
         # For multiple labels prediction  
         probas = self.rank_svm.decision_function(query_image_features)  
-        sorted_indices = np.argsort(probas)[::-1]  
+        sorted_indices = np.argsort(probas.flatten())[::-1]  
         ranked_labels = self.mlb.classes_[sorted_indices]  
         
         return ranked_labels  
@@ -98,3 +101,4 @@ class RemoteCLIPClassifierRankSVM:
 
         df = pd.DataFrame(results)  
         df.to_csv(output_csv, index=False)  
+        print(f"Results saved to `{output_csv}`")  

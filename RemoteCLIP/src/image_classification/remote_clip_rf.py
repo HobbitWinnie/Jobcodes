@@ -34,8 +34,8 @@ class RemoteCLIPClassifierRF:
     def fit_rf(self, dataloader, n_estimators=100, max_depth=None):  
         train_image_features = []  
         train_labels = []  
-        for images, labels, paths in dataloader:  
-            features = self.get_image_features(images)  
+        for processed_images, labels, _ in dataloader:  
+            features = self.get_image_features(processed_images)  
             train_image_features.append(features)  
             train_labels.extend(labels)  
 
@@ -75,3 +75,4 @@ class RemoteCLIPClassifierRF:
 
         df = pd.DataFrame(results)  
         df.to_csv(output_csv, index=False)  
+        print(f"Results saved to `{output_csv}`")  

@@ -2,7 +2,7 @@ import torch
 import numpy as np  
 import pandas as pd  
 import os  
-from sklearn.neighbors import NearestNeighbors  
+from sklearn.neighbors import KNeighborsClassifier  
 from sklearn.preprocessing import MultiLabelBinarizer  
 from PIL import Image  
 import open_clip  
@@ -35,11 +35,11 @@ class RemoteCLIPClassifierMLKNN:
         train_image_features = []  
         train_labels = []  
         
-        for images, labels, paths in dataloader:  
+        for images, labels, _ in dataloader:  
             features = self.get_image_features(images)  
             train_image_features.append(features)  
-            train_labels.extend(labels.numpy())  
-        
+            train_labels.extend(labels)  
+
         train_image_features = np.vstack(train_image_features)  
         train_labels = np.array(train_labels)  
 
@@ -47,24 +47,23 @@ class RemoteCLIPClassifierMLKNN:
         self.mlb.fit(train_labels)  
         binarized_labels = self.mlb.transform(train_labels)  
 
-        self.knn = NearestNeighbors(n_neighbors=n_neighbors, algorithm='kd_tree')  
+        self.knn = KNeighborsClassifier(n_neighbors=n_neighbors, algorithm='kd_tree')  
         self.knn.fit(train_image_features, binarized_labels)  
 
     def classify_image(self, query_image, k=20, s=1.0):  
-        query_image = query_image.unsqueeze(0).to(self.device)  
         query_image_features = self.get_image_features(query_image)  
 
         distances, indices = self.knn.kneighbors(query_image_features, n_neighbors=k)  
-        neighbor_labels = self.knn.predict(indices)  
+        neighbor_labels = self.knn.predict(query_image_features)  
 
         # Calculate the probabilities for each label  
-        label_counts = np.sum(neighbor_labels, axis=1)  
+        label_counts = np.sum(neighbor_labels, axis=0)  
         label_proba = (label_counts + s) / (k + 2 * s)  
         
         # Binarize the probabilities (label is present if probability > 0.5)  
         predicted_labels = (label_proba > 0.5).astype(int)  
 
-        return self.mlb.inverse_transform(predicted_labels)  
+        return self.mlb.inverse_transform(predicted_labels.reshape(1, -1))[0]  
     
     def classify_images_in_folder(self, folder_path, output_csv, k=20, s=1.0):  
         results = []  
@@ -72,9 +71,10 @@ class RemoteCLIPClassifierMLKNN:
             img_path = os.path.join(folder_path, img_name)  
             if img_path.lower().endswith(('.png', '.jpg', '.jpeg', '.bmp', '.gif')):  
                 image = Image.open(img_path).convert("RGB")  
-                image = self.preprocess_func(image).unsqueeze(0)  
+                image = self.preprocess_func(image).unsqueeze(0).to(self.device)  
                 labels = self.classify_image(image, k, s)  
                 results.append({"filename": img_name, "labels": labels})  
 
         df = pd.DataFrame(results)  
         df.to_csv(output_csv, index=False)  
+        print(f"Results saved to `{output_csv}`")  
