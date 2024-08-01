@@ -10,6 +10,7 @@ sys.path.append('/home/nw/Codes/data_loader')
 sys.path.append('/home/nw/Codes/RemoteCLIP/src/image_classification')  
 
 from WHURS19_DatasetLoader import WHURS19DatasetLoader  
+from MultiLabel_CSV_Loader import MultiLabelCSVLoader  
 
 from remote_clip_knn import RemoteCLIPClassifierKNN  
 from remote_clip_svm import RemoteCLIPClassifierSVM  
@@ -49,6 +50,10 @@ if __name__ == "__main__":
     num_shots = 20
     support_dataset_path = '/mnt/d/nw/GF2_Data/MultiLabel_dataset/data'
 
+    # multi-label image classification
+    ROOT_DIR = '/mnt/d/nw/GF2_Data/MultiLabel_dataset'   
+    image_folder_path = os.path.join(ROOT_DIR, 'data')  
+    csv_path = os.path.join(ROOT_DIR, 'csv_file/labels_v6.csv')   
 
     # 配置/训练分类器
     if model_type == 'knn':
@@ -87,8 +92,10 @@ if __name__ == "__main__":
 
     elif model_type == 'rank_svm':
         classifier = RemoteCLIPClassifierRankSVM(ckpt_path=ckpt_path, model_name=model_name)  
-        dataset = WHURS19DatasetLoader(data_path=multi_label_data_path, preprocess_func = classifier.preprocess_func)  
-        dataloader = DataLoader(dataset, batch_size=32, shuffle=False, num_workers=4)
+
+        # load data from csv file
+        train_dataset = MultiLabelCSVLoader(csv_path, preprocess_func=classifier.preprocess_func)  
+        dataloader = DataLoader(train_dataset, batch_size=32, shuffle=True)  
         classifier.fit_rank_svm(dataloader)  
 
     else:  

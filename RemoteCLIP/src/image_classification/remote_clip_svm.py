@@ -37,7 +37,7 @@ class RemoteCLIPClassifierSVM:
         for processed_images, labels, _ in dataloader:  
             features = self.get_image_features(processed_images)  
             train_image_features.append(features)  
-            train_labels.extend(labels)  # 无需转换为 numpy 数组  
+            train_labels.extend(labels)  
         train_image_features = np.vstack(train_image_features)  
         train_labels = np.array(train_labels)  
 
