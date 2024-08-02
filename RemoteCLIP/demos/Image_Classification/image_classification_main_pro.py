@@ -28,6 +28,7 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 
 
 if __name__ == "__main__":  
+<<<<<<< HEAD
     ckpt_path = '/home/nw/Codes/RemoteCLIP/cache/checkpoints/RemoteCLIP-ViT-L-14.pt'  
     model_name = "ViT-L-14"  
 
@@ -37,6 +38,17 @@ if __name__ == "__main__":
     # train dataset
     data_path ='/mnt/d/nw/Common_Datasets/Classification-12/WHU-RS19'  
     multi_label_data_path = '/mnt/d/nw/GF2_Data/MultiLabel_dataset/data'
+=======
+    ckpt_path = '/home/nw/Assets/RemoteCLIP/ckpt/RemoteCLIP-ViT-L-14.pt'  
+    model_name = "ViT-L-14"  
+
+    # choose a classifier
+    model_type = 'svm'
+
+    # train dataset
+    data_path ='/home/Dataset/nw/Common_Datasets/Classification-12/WHU-RS19'  
+    multi_label_data_path = '/home/Dataset/nw/GF2_Data/MultiLabel_dataset/data'
+>>>>>>> 41bc9af (hi)
 
     # zero-shot classification parameters
     scene_17_labels = [
@@ -103,7 +115,13 @@ if __name__ == "__main__":
 
 
     # 调用分类器进行分类并保存top-3结果至csv文件
+<<<<<<< HEAD
     # query_folder_path = '/mnt/d/nw/GF2_Data/data'  
     query_folder_path = '/mnt/d/nw/GF2_Data/26'   # new data
     output_csv_path = '/mnt/d/nw/GF2_Data/26/test_rank_svm_top3.csv'
+=======
+    query_folder_path = '/home/Dataset/nw/GF2_Data/data'  
+    # query_folder_path = '/mnt/d/nw/GF2_Data/26'   # new data
+    output_csv_path = '/home/Dataset/nw/GF2_Data/26/test_top3.csv'
+>>>>>>> 41bc9af (hi)
     classifier.classify_images_in_folder(query_folder_path, output_csv_path)

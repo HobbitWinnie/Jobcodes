@@ -2,6 +2,10 @@
 RemoteCLIP/assets/
 RemoteCLIP/cache/
 
+<<<<<<< HEAD
+=======
+cache/
+>>>>>>> 41bc9af (hi)
 
 OLMo/
 
