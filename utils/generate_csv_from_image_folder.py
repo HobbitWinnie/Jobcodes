@@ -37,6 +37,6 @@ def generate_csv_from_image_folder(folder_path, output_csv_path):
     print(f"CSV file has been saved to {output_csv_path}")  
 
 # Example usage  
-image_folder_path = '/mnt/d/nw/GF2_Data/MultiLabel_dataset/data'  # The root folder containing subfolders of images  
-output_csv_path = '/mnt/d/nw/GF2_Data/MultiLabel_dataset/csv_file/labels_v6.csv'  
+image_folder_path = '/home/Dataset/nw/GF2_Data/MultiLabel_dataset/data'  # The root folder containing subfolders of images  
+output_csv_path = '/home/Dataset/nw/GF2_Data/MultiLabel_dataset/csv_file/labels_d813.csv'  
 generate_csv_from_image_folder(image_folder_path, output_csv_path)

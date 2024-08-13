@@ -1,13 +1,18 @@
 import torch  
 import numpy as np  
-from sklearn.svm import LinearSVC  
-from sklearn.preprocessing import MultiLabelBinarizer, StandardScaler
-from sklearn.utils import shuffle  
-import open_clip   
-from PIL import Image  
-import pandas as pd  
+import logging  
 import os  
+import pandas as pd  
+from PIL import Image  
+from sklearn.multiclass import OneVsRestClassifier  
+from sklearn.svm import SVC  
+from sklearn.preprocessing import MultiLabelBinarizer, StandardScaler  
+from sklearn.model_selection import GridSearchCV  
+import open_clip  
 
+# Set up logging  
+logging.basicConfig(level=logging.INFO)  
+logger = logging.getLogger(__name__)  
 
 class RemoteCLIPClassifierRankSVM:  
     def __init__(self, ckpt_path, model_name='ViT-L-14', device=None):  
@@ -23,7 +28,7 @@ class RemoteCLIPClassifierRankSVM:
         self.model.load_state_dict(ckpt)  
         self.model = self.model.to(self.device).eval()  
 
-        self.rank_svm = None  
+        self.rank_svm = OneVsRestClassifier(SVC(kernel='linear'))  
         self.mlb = MultiLabelBinarizer()  
 
     def get_image_features(self, images):  
@@ -31,98 +36,73 @@ class RemoteCLIPClassifierRankSVM:
         with torch.no_grad():  
             image_features = self.model.encode_image(images)  
         image_features /= image_features.norm(dim=-1, keepdim=True)  
-        return image_features.cpu().numpy().astype(np.float32)  # Ensure 32-bit float  
+        return image_features.cpu().numpy().astype(np.float32)  
 
-    def fit_rank_svm(self, dataloader, C=1.0):  
+    def fit_rank_svm(self, dataloader):  
         train_image_features = []  
         train_labels = []  
-        
-        for images, labels, _ in dataloader:  
-            image_features = self.get_image_features(images)  
-            train_image_features.append(image_features)  
-            train_labels.extend(labels.numpy())  
+        with torch.no_grad():  
+            for images, labels, _ in dataloader:  
+                image_features = self.get_image_features(images)  
+                train_image_features.append(image_features)  
+                train_labels.extend(labels.numpy())  
 
-        train_image_features = np.vstack(train_image_features)  
+        train_image_features = np.concatenate(train_image_features)  
         train_labels = np.array(train_labels)  
 
-        # 将每个标签向量转换为标签集合列表  
-        train_labels_list = []  
-        for row in train_labels:  
-            train_labels_list.append(np.where(row == 1)[0].tolist())  
+        # Create label list  
+        train_labels_list = [np.where(row == 1)[0].tolist() for row in train_labels]  
 
         # Multi-label Binarization  
         binarized_labels = self.mlb.fit_transform(train_labels_list)  
-        
-        pairs_train, pairs_label = self._create_pairs(train_image_features, binarized_labels)  
 
-        # Scale the feature pairs  
+        # Feature scaling  
         scaler = StandardScaler()  
-        pairs_train = scaler.fit_transform(pairs_train.astype(np.float32))  # Ensure 32-bit float and scale  
+        train_image_features = scaler.fit_transform(train_image_features)  
 
-        pairs_label = pairs_label.astype(np.int32)  # Ensure 32-bit int for labels  
-        print(f"Pairs train dtype: {pairs_train.dtype}, label dtype: {pairs_label.dtype}")  
+        logger.info(f"Features dtype: {train_image_features.dtype}")  
 
-        self.rank_svm = LinearSVC(C=C)  
-        self.rank_svm.fit(pairs_train, pairs_label)  
-
-    def _create_pairs(self, X, y, max_pairs=100000):  
-        """  
-        Create pairs for rank SVM.  
-        """  
-        pairs = []  
-        targets = []  
-        num_samples = y.shape[0]  
-        
-        # 使用随机选择的方法来减少内存使用  
-        sampled_indices = np.random.choice(num_samples, size=min(max_pairs, num_samples), replace=False)  
-        pairs_count = 0  
-
-        for i in sampled_indices:  
-            for j in np.random.choice(num_samples, size=min(max_pairs, num_samples), replace=False):  
-                if i != j:  
-                    diff = X[i] - X[j]  
-                    label_diff = y[i] - y[j]  
-                    for k in range(len(label_diff)):  
-                        if label_diff[k] != 0:  
-                            pairs.append(diff)  
-                            targets.append(int(np.sign(label_diff[k])))  
-                            pairs_count += 1  
-                            if pairs_count >= max_pairs:  
-                                break  
-                if pairs_count >= max_pairs:  
-                    break  
-            if pairs_count >= max_pairs:  
-                break  
-
-        print("Max diff: ", np.max(pairs))  
-        print("Min diff: ", np.min(pairs))   
-
-        pairs, targets = shuffle(pairs, targets)  
-        return np.array(pairs), np.array(targets)  
-
+        # Hyperparameter tuning using GridSearchCV  
+        param_grid = {'estimator__C': [0.1, 1.0, 10]}  
+        grid = GridSearchCV(self.rank_svm, param_grid, cv=5, n_jobs=-1)  
+        grid.fit(train_image_features, binarized_labels)  
+        self.rank_svm = grid.best_estimator_  
 
     def classify_image(self, query_image, top_k=3):  
         query_image = query_image.to(self.device)  
-        query_image_features = self.get_image_features(query_image)
-        scores = self.rank_svm.decision_function(query_image_features)  
-        
+        query_image_features = self.get_image_features(query_image)  
+
+        # Get decision scores from the trained SVM model  
+        scores = self.rank_svm.decision_function(query_image_features)  # Shape should be (1, num_classes)  
+
+        # Handle scores to get top_k classes  
         top_indices = np.argsort(scores[0])[::-1][:top_k]  
-        top_labels = self.mlb.classes_[top_indices]  
+        top_labels = [self.mlb.classes_[i] for i in top_indices]  
         top_scores = scores[0][top_indices]  
 
-        return top_labels, top_scores 
+        return top_labels, top_scores  
 
-    
     def classify_images_in_folder(self, folder_path, output_csv):  
         results = []  
+        valid_extensions = ('.png', '.jpg', '.jpeg', '.bmp', '.gif')  
         for img_name in os.listdir(folder_path):  
             img_path = os.path.join(folder_path, img_name)  
-            if img_path.lower().endswith(('.png', '.jpg', '.jpeg', '.bmp', '.gif')):  
-                image = Image.open(img_path).convert("RGB")  
-                image = self.preprocess_func(image).unsqueeze(0)  
-                top_labels, top_scores = self.classify_image(self.model, image, self.tokenizer, self.device, self.rank_svm, self.mlb, top_k=3)  
-                results.append({"filename": img_name, "top_labels": top_labels, "top_scores": top_scores})  
+            if img_path.lower().endswith(valid_extensions):  
+                try:  
+                    image = Image.open(img_path).convert("RGB")  
+                    image = self.preprocess_func(image).unsqueeze(0)  
+                    top_labels, top_scores = self.classify_image(image)  
+                    results.append({"filename": img_name, "top_labels": top_labels, "top_scores": top_scores})  
+                except Exception as e:  
+                    logger.error(f"处理图像 {img_name} 时出现错误: {e}")  
 
-        df = pd.DataFrame(results)  
-        df.to_csv(output_csv, index=False)  
-        print(f"Results saved to `{output_csv}`")
+        if results:  
+            output_dir = os.path.dirname(output_csv)  
+            if not os.path.exists(output_dir):  
+                os.makedirs(output_dir, exist_ok=True)  
+
+            df = pd.DataFrame(results)  
+            df.to_csv(output_csv, index=False)  
+            logger.info(f"结果已保存到 `{output_csv}`")  
+        else:  
+            logger.warning("未处理任何有效图像。")  
