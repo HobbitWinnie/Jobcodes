@@ -88,3 +88,51 @@ class LabelSmoothingLoss(nn.Module):
         
         # 计算损失  
         return self.criterion(output, target_one_hot)  
+    
+
+class BCELoss(nn.Module):  
+    """  
+    标签平滑损失用于减轻模型对训练数据的过拟合。  
+    参数:  
+    - classes: 类别数目。  
+    - smoothing: 平滑因子，减少置信度过高的预测。  
+    """  
+    def __init__(self, classes, smoothing=0.0):  
+        super(LabelSmoothingLoss, self).__init__()  
+        assert 0.0 <= smoothing < 1.0, "Smoothing should be in [0, 1)"  
+        self.confidence = 1.0 - smoothing  
+        self.smoothing = smoothing  
+        self.cls = classes  
+        # 使用KL散度作为损失标准，进行批量均值化  
+        self.criterion = nn.KLDivLoss(reduction='batchmean')  
+        
+    def forward(self, output, target):  
+        batch_size, num_classes = output.size()  
+        
+        # 创建一个平滑标签张量  
+        smooth_label = torch.full(size=(batch_size, num_classes),  
+                                  fill_value=self.smoothing / (num_classes - 1)).to(output.device)  
+        
+        # 目标标签位置设为置信度  
+        target = target.long().unsqueeze(1)  # 确保target是int64类型并且增加一个维度  
+        target_one_hot = smooth_label.scatter(1, target, self.confidence)  
+        
+        # 将输出转换为log_softmax形式  
+        output = torch.log_softmax(output, dim=1)  
+        
+        # 计算损失  
+        loss = self.criterion(output, target_one_hot)  
+        return loss  
+
+# # 示例用法  
+# if __name__ == "__main__":  
+#     num_classes = 5  # 假设有5个类别  
+#     smoothing = 0.1  # 平滑因子  
+#     criterion = LabelSmoothingLoss(classes=num_classes, smoothing=smoothing)  
+
+#     # 假装有一些模型输出  
+#     logits = torch.randn(3, num_classes)  # batch_size=3, num_classes=5  
+#     targets = torch.tensor([0, 1, 4])  # 假设目标类标签为 [0, 1, 4]  
+
+#     loss = criterion(logits, targets)  
+#     print(f"Label Smoothing Loss: {loss.item()}")
