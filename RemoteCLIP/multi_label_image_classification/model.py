@@ -66,14 +66,15 @@ class MultiLabelClassifierPro:
             scheduler.step()  
             print(f"Epoch {epoch + 1}/{num_epochs}, Loss: {total_loss / len(train_loader):.4f}")  
             
-            # Evaluate on validation set  
-            val_f1, _, _ = self.evaluate_model(val_loader)  
-            
-            # Save best model  
-            if val_f1 > best_val_f1:  
-                best_val_f1 = val_f1  
-                self.save_model(best_model_path)  
-                print(f"New best model saved with F1: {val_f1:.4f}")  
+            # Evaluate on validation set every 5 epochs  
+            if (epoch + 1) % 10 == 0:  
+                val_f1, _, _ = self.evaluate_model(val_loader)  
+                
+                # Save best model  
+                if val_f1 > best_val_f1:  
+                    best_val_f1 = val_f1  
+                    self.save_model(best_model_path)  
+                    print(f"New best model saved with F1: {val_f1:.4f}")  
 
     def evaluate_model(self, dataloader):  
         self.fc.eval()  
