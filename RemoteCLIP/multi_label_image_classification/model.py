@@ -1,4 +1,6 @@
 import os  
+os.environ["CUDA_VISIBLE_DEVICES"] = "0,2,3"  
+
 import torch  
 import torch.nn as nn  
 import torch.optim as optim  
@@ -8,46 +10,60 @@ import open_clip
 from PIL import Image  
 from sklearn.metrics import f1_score, average_precision_score, roc_auc_score  
 from torch.optim.lr_scheduler import StepLR  
-import torchvision.transforms as transforms  
+from adabelief_pytorch import AdaBelief  
+import time  
+
 
 class MultiLabelClassifierPro:  
-    def __init__(self, ckpt_path, model_name='ViT-L-14', device=None):  
+    def __init__(self, num_classes, ckpt_path, model_name='ViT-L-14', device=None):  
         self.device = device or ('cuda' if torch.cuda.is_available() else 'cpu')  
+        self.num_classes = num_classes  
+
         self.model, _, preprocess_func = open_clip.create_model_and_transforms(model_name, pretrained=False)  
-        self.preprocess_func = preprocess_func  
-        self.tokenizer = open_clip.get_tokenizer(model_name)  
-        
+        self.preprocess_func = preprocess_func          
         ckpt = torch.load(ckpt_path, map_location='cpu')  
-        self.model.load_state_dict(ckpt)  
+        self.model.load_state_dict(ckpt)          
         self.model.to(self.device).eval()  
+
+        # Modify fully connected layer  
+        self.fc = nn.Sequential(  
+            nn.Linear(self.get_visual_output_dim(), num_classes),  
+            nn.ReLU(),  
+            nn.Dropout(0.5),  
+            nn.Linear(num_classes, num_classes)  
+        ).to(self.device)  
         
-        # Freeze pre-trained model weights  
-        for param in self.model.parameters():  
-            param.requires_grad = False  
-        
-        self.fc = None  
-        self.optimizer = None  
+        # Handle model deployment on multiple GPUs if available  
+        if torch.cuda.device_count() > 1:  
+            self.fc = nn.DataParallel(self.fc)  
+            self.model = nn.DataParallel(self.model)  
+
+       
+        self.criterion = nn.BCEWithLogitsLoss()  
+        self.optimizer = optim.Adam(self.fc.parameters(), lr=0.001)  
+        # self.optimizer = optim.AdamW(self.fc.parameters(), lr=lr)  
+        # self.optimizer = optim.RMSprop(self.fc.parameters(), lr=lr, momentum=0.9)  
+        # self.optimizer = AdaBelief(self.fc.parameters(), lr=lr, eps=1e-12, betas=(0.9, 0.999), weight_decay=0, amsgrad=False)  
+
+
+    def get_visual_output_dim(self):  
+        return self.model.module.visual.output_dim if isinstance(self.model, nn.DataParallel) else self.model.visual.output_dim  
 
     def get_image_features(self, images):  
         images = images.to(self.device)  
         with torch.no_grad():  
-            image_features = self.model.encode_image(images)  
+            image_features = self.model.module.encode_image(images)  
         return image_features / image_features.norm(dim=-1, keepdim=True)  
 
-    def train_model(self, train_loader, val_loader, num_labels, num_epochs=2, lr=1e-4, criterion=None):  
-        self.fc = nn.Linear(self.model.visual.output_dim, num_labels).to(self.device)  
-        criterion = criterion or nn.BCEWithLogitsLoss()  
-        
-        self.optimizer = optim.AdamW(self.fc.parameters(), lr=lr)  
+    def train_model(self, train_loader, val_loader, num_epochs=20):                   
         scheduler = StepLR(self.optimizer, step_size=5, gamma=0.1)  
         scaler = torch.cuda.amp.GradScaler()  
-        
-        best_val_f1 = 0.0  
-        best_model_path = "/home/nw/Codes/RemoteCLIP/multi_label_image_classification/best_model.pth"  
-        
-        for epoch in range(num_epochs):  
+                
+        for epoch in range(num_epochs): 
             self.fc.train()  
             total_loss = 0.0  
+            start_time = time.time()  # Start time for the epoch  
+
             for images, targets in train_loader:  
                 images, targets = images.to(self.device), targets.to(self.device).float()  
                 self.optimizer.zero_grad()  
@@ -55,7 +71,7 @@ class MultiLabelClassifierPro:
                 with torch.cuda.amp.autocast():  
                     features = self.get_image_features(images)  
                     outputs = self.fc(features)  
-                    loss = criterion(outputs, targets)  
+                    loss = self.criterion(outputs, targets)  
                 
                 scaler.scale(loss).backward()  
                 scaler.step(self.optimizer)  
@@ -64,17 +80,14 @@ class MultiLabelClassifierPro:
                 total_loss += loss.item()  
             
             scheduler.step()  
-            print(f"Epoch {epoch + 1}/{num_epochs}, Loss: {total_loss / len(train_loader):.4f}")  
+            end_time = time.time()  # End time for the epoch  
+            epoch_duration = end_time - start_time  # Calculate the durati
+
+            print(f"Epoch {epoch + 1}/{num_epochs}, Loss: {total_loss / len(train_loader):.4f}, Time: {epoch_duration:.2f} seconds")  
             
             # Evaluate on validation set every 5 epochs  
-            if (epoch + 1) % 10 == 0:  
-                val_f1, _, _ = self.evaluate_model(val_loader)  
-                
-                # Save best model  
-                if val_f1 > best_val_f1:  
-                    best_val_f1 = val_f1  
-                    self.save_model(best_model_path)  
-                    print(f"New best model saved with F1: {val_f1:.4f}")  
+            if (epoch + 1) % 5 == 0:  
+                self.evaluate_model(val_loader)  
 
     def evaluate_model(self, dataloader):  
         self.fc.eval()  
@@ -96,44 +109,37 @@ class MultiLabelClassifierPro:
         
         threshold = 0.5  
         all_predictions_bin = (all_predictions > threshold).astype(int)  
-        try:  
-            f1 = f1_score(all_targets, all_predictions_bin, average='weighted', zero_division=1)  
-            average_precision = average_precision_score(all_targets, all_predictions, average='weighted')  
-            
-            # Check if more than one class is present before computing ROC AUC  
-            if np.unique(all_targets).size > 1:  
-                roc_auc = roc_auc_score(all_targets, all_predictions, average='weighted')  
-            else:  
-                print("Warning: Only one class present in y_true. ROC AUC score is not defined in that case.")  
-                roc_auc = float('nan')              
-            
-            print(f"F1 Score: {f1:.4f}")  
-            print(f"Average Precision: {average_precision:.4f}")  
-            print(f"ROC-AUC: {roc_auc:.4f}")  
-            
-            return f1, average_precision, roc_auc  
-        except ValueError as e:  
-            print(f"Error computing metrics: {e}")  
-            return 0.0, 0.0, 0.0  
-
-    def save_model(self, path):  
-        torch.save({  
-            'model_state_dict': self.model.state_dict(),  
-            'fc_state_dict': self.fc.state_dict(),  
-            'optimizer_state_dict': self.optimizer.state_dict()  
-        }, path)  
-
-    def load_model(self, path, num_labels):  
-        checkpoint = torch.load(path)  
-        self.model.load_state_dict(checkpoint['model_state_dict'])  
+        f1 = f1_score(all_targets, all_predictions_bin, average='weighted', zero_division=1)  
         
-        self.fc = nn.Linear(self.model.visual.output_dim, num_labels).to(self.device)  
-        self.fc.load_state_dict(checkpoint['fc_state_dict'])  
+        print(f"F1 Score: {f1:.4f}")  
+        return f1  
 
-        self.optimizer = optim.AdamW(self.fc.parameters())  
-        self.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])  
+    # def save_model(self, path):  
+    #     torch.save({  
+    #         'model_state_dict': self.model.module.state_dict() if isinstance(self.model, nn.DataParallel) else self.model.state_dict(),  
+    #         'fc_state_dict': self.fc.state_dict(),  
+    #         'optimizer_state_dict': self.optimizer.state_dict()  
+    #     }, path)  
 
-    def classify_images_from_folder(self, folder_path, output_csv):  
+    # def load_model(self, path, num_labels):  
+    #     checkpoint = torch.load(path)  
+    #     model_state_dict = checkpoint['model_state_dict']  
+
+    #     if isinstance(self.model, nn.DataParallel):  
+    #         self.model.module.load_state_dict(model_state_dict)  
+    #     else:  
+    #         self.model.load_state_dict(model_state_dict)  
+        
+    #     self.fc = nn.Linear(self.get_visual_output_dim(), num_labels).to(self.device)  
+    #     self.fc.load_state_dict(checkpoint['fc_state_dict'])  
+
+    #     self.optimizer = optim.RMSprop(self.fc.parameters(), lr=1e-4, momentum=0.9)  
+    #     self.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])  
+
+    #     # self.optimizer = optim.AdamW(self.fc.parameters())  
+    #     # self.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])  
+
+    # def classify_images_from_folder(self, folder_path, output_csv):  
         self.fc.eval()  
         image_files = [os.path.join(folder_path, f) for f in os.listdir(folder_path) if os.path.isfile(os.path.join(folder_path, f))]  
         

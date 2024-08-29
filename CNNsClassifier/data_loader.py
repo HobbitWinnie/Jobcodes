@@ -9,16 +9,8 @@ class MultiLabelDataset(Dataset):
     def __init__(self, image_dir, label_file, preprocess_func, file_extension='.png'):  
         self.image_dir = image_dir  
         self.labels = pd.read_csv(label_file)  
-        self.preprocess_func = preprocess_func  
         self.file_extension = file_extension
-
-        # # Define the preprocessing function  
-        # self.preprocess_func = transforms.Compose([  
-        #     transforms.Resize((224, 224)),  
-        #     transforms.ToTensor(),  
-        #     transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),  
-        # ]) 
-
+        self.preprocess_func = preprocess_func
 
     def __len__(self):  
         return len(self.labels)  
@@ -26,8 +18,7 @@ class MultiLabelDataset(Dataset):
     def __getitem__(self, idx):  
         img_name = os.path.join(self.image_dir, self.labels.iloc[idx, 0]) + self.file_extension
         image = Image.open(img_name).convert('RGB')  
+        image_tensor = self.preprocess_func(image)
         label = self.labels.iloc[idx, 1:].values.astype('float')  
         
-        image = self.preprocess_func(image)           
-
-        return image, torch.tensor(label, dtype=torch.float32)   
+        return image_tensor, torch.tensor(label, dtype=torch.float32)   
