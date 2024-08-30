@@ -9,7 +9,6 @@ class WHURS19DatasetLoader(Dataset):
         self.image_paths = []
         self.labels = []
         self.classes = sorted(os.listdir(data_path))
-        # self.class_to_idx = {cls: idx for idx, cls in enumerate(self.classes)}
 
         for cls in self.classes:
             class_dir = os.path.join(data_path, cls)
@@ -19,7 +18,6 @@ class WHURS19DatasetLoader(Dataset):
                         self.image_paths.append(os.path.join(class_dir, fname))
                         self.labels.append(cls)
 
-                        # self.labels.append(self.class_to_idx[cls])
 
     def __len__(self):
         return len(self.image_paths)

@@ -4,10 +4,11 @@ import logging
 from torch.utils.data import DataLoader  
 
 sys.path.append('/home/nw/Codes/data_loader')  
-sys.path.append('/home/nw/Codes/RemoteCLIP/src/image_classification')  
+sys.path.append('/home/nw/Codes/RemoteCLIP/Image_Classification/src')  
+
 
 from WHURS19_DatasetLoader import WHURS19DatasetLoader  
-from MultiLabel_CSV_Loader import MultiLabelCSVLoader  
+from MultiLabel_CSV_Loader import MultiLabelDataset
 
 from remote_clip_knn import RemoteCLIPClassifierKNN  
 from remote_clip_svm import RemoteCLIPClassifierSVM  
@@ -18,6 +19,7 @@ from remote_clip_few_shot import RemoteCLIPFewShotClassifier
 
 from remote_clip_ml_knn import RemoteCLIPClassifierMLKNN
 from remote_clip_rank_svm import RemoteCLIPClassifierRankSVM
+
 
 # 配置日志  
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')  
@@ -30,12 +32,21 @@ SCENE_17_CLASSES = [
     'mining_area','power_station'
 ]
 
+#单卡batch_size = 64，并行*显卡数量
+def get_dataloaders(image_dir, label_file, preprocess_func, batch_size=192, file_extension='.png'):  
+    dataset = MultiLabelDataset(image_dir, label_file, preprocess_func, file_extension=file_extension)  
+    # num_workers 的值可以设置为系统 CPU 核心数量的 2 到 4 倍，可以直接设置为与逻辑处理器数量相同
+    train_loader = DataLoader(dataset, batch_size=batch_size, num_workers=42, shuffle=True)  
+    
+    return train_loader 
+
+
 if __name__ == "__main__":  
     ckpt_path = '/home/nw/Assets/RemoteCLIP/ckpt/RemoteCLIP-ViT-L-14.pt'  
     model_name = "ViT-L-14"  
 
     # choose a classifier
-    model_type = 'rank_svm'
+    model_type = 'ml-knn'
 
     # general classification parameters
     DATA_ROOT_DIR = '/home/Dataset/nw'
@@ -48,10 +59,13 @@ if __name__ == "__main__":
     support_dataset_path = os.path.join(DATA_ROOT_DIR, support_dataset_dir)
 
     # multi-label image classification
-    multi_label_dataset = 'GF2_Data/MultiLabel_dataset'
-    multi_label_data_path = os.path.join(DATA_ROOT_DIR, multi_label_dataset, 'data')
-    multi_label_csv_path = os.path.join(DATA_ROOT_DIR, multi_label_dataset, 'csv_file/labels_d813.csv')
-
+    # multi_label_dataset = 'GF2_Data/MultiLabel_dataset'
+    # multi_label_data_path = os.path.join(DATA_ROOT_DIR, multi_label_dataset, 'data')
+    # multi_label_csv_path = os.path.join(DATA_ROOT_DIR, multi_label_dataset, 'csv_file/labels_d813.csv')
+    DATASET_DIR = '/home/Dataset/nw/Multilabel-Datasets/TIANJI_multilabel'
+    image_dir = os.path.join(DATASET_DIR, 'image_tianji')  
+    label_file = os.path.join(DATASET_DIR, 'multilabel_all.csv')   
+    val_label_file = os.path.join(DATASET_DIR, 'multilabel_test.csv')  
 
     # 配置/训练分类器
     if model_type == 'knn':
@@ -125,24 +139,18 @@ if __name__ == "__main__":
         
         classifier.load_support_dataset(support_dataset, num_shots=num_shots)
 
+
     # multi-label knn
     elif model_type == 'ml-knn':
         classifier = RemoteCLIPClassifierMLKNN(
             ckpt_path=ckpt_path, 
             model_name=model_name
-            )  
-        dataset = WHURS19DatasetLoader(
-            data_path=multi_label_data_path, 
-            preprocess_func=classifier.preprocess_func
-            )  
-        dataloader = DataLoader(
-            dataset, 
-            batch_size=32, 
-            shuffle=False, 
-            num_workers=4
-            )
+            )         
+        train_dataloader = get_dataloaders(image_dir, label_file, classifier.preprocess_func)  
+        val_dataloader = get_dataloaders(image_dir, val_label_file, classifier.preprocess_func)  
         
-        classifier.fit_knn(dataloader, n_neighbors=20)  
+        classifier.fit_knn(train_dataloader)
+        classifier.evaluate(val_dataloader)
 
     elif model_type == 'rank_svm':
         classifier = RemoteCLIPClassifierRankSVM(
@@ -150,17 +158,11 @@ if __name__ == "__main__":
             model_name=model_name
             )  
         # load data from csv file
-        train_dataset = MultiLabelCSVLoader(
-            csv_path = multi_label_csv_path,
-            preprocess_func=classifier.preprocess_func
-            )  
-        dataloader = DataLoader(
-            train_dataset, 
-            batch_size=32, 
-            shuffle=True
-            )  
+        train_dataloader = get_dataloaders(image_dir, label_file, classifier.preprocess_func)  
+        val_dataloader = get_dataloaders(image_dir, val_label_file, classifier.preprocess_func)  
         
-        classifier.fit_rank_svm(dataloader)  
+        classifier.train_model(train_dataloader)
+        classifier.evaluate(val_dataloader)
 
     else:  
         raise ValueError("Unsupported model type. Choose 'knn', 'svm', or 'rf'.")  
