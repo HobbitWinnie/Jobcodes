@@ -39,6 +39,7 @@ class ResNetMultiLabelClassifier:
             transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),  
         ])  
 
+        
     def train_model(self, train_dataloader, val_dataloader, num_epochs=10):  
         self.model.train()  
         for epoch in range(num_epochs):  

@@ -8,6 +8,8 @@ from torchvision import models, transforms
 from PIL import Image  
 import pandas as pd  
 from sklearn.metrics import f1_score  
+import torch.optim.lr_scheduler as lr_scheduler  
+
 import time  
 
 
@@ -29,6 +31,7 @@ class DenseNet201MultiLabelClassifier:
         # Define the loss function and optimizer  
         self.criterion = nn.BCEWithLogitsLoss()  
         self.optimizer = optim.Adam(self.model.parameters(), lr=0.001)  
+        self.scheduler = lr_scheduler.ReduceLROnPlateau(self.optimizer, mode='min', factor=0.1, patience=5, verbose=True)  
 
         # Preprocess function for image transformation  
         self.preprocess_func = transforms.Compose([  
@@ -58,9 +61,11 @@ class DenseNet201MultiLabelClassifier:
             
             # Evaluate on validation set every 5 epochs  
             if (epoch + 1) % 5 == 0:  
-                self.evaluate(val_dataloader) 
-                self.model.train()  
-
+                # Evaluate on validation set  
+                val_loss = self.evaluate(val_dataloader)   
+                # Step the scheduler  
+                self.scheduler.step(val_loss)  
+                self.model.train()
 
     def evaluate(self, dataloader, threshold=0.5):  
         self.model.eval()  
