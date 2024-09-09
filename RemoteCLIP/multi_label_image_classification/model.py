@@ -8,7 +8,7 @@ import numpy as np
 import pandas as pd  
 import open_clip  
 from PIL import Image  
-from sklearn.metrics import f1_score, average_precision_score, roc_auc_score  
+from sklearn.metrics import f1_score, average_precision_score, roc_auc_score, fbeta_score
 from torch.optim.lr_scheduler import StepLR  
 from adabelief_pytorch import AdaBelief  
 import time  
@@ -141,8 +141,12 @@ class MultiLabelClassifierPro:
 
         # Threshold outputs for F1 score calculation  
         thresholded_predictions = [[1 if out >= 0.5 else 0 for out in sample] for sample in all_predictions]         
+        
         f1 = f1_score(all_labels, thresholded_predictions, average='macro', zero_division=1)  
         print(f'F1 Score: {f1}')  
+       
+        f2 = fbeta_score(all_labels, thresholded_predictions, beta=2, average='macro', zero_division=1)  
+        print(f'F2 Score: {f2}') 
 
         return avg_loss  
 
