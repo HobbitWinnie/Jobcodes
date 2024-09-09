@@ -1,5 +1,5 @@
-import os  
-os.environ["CUDA_VISIBLE_DEVICES"] = "0,2,3"  
+# import os  
+# os.environ["CUDA_VISIBLE_DEVICES"] = "0,2,3"  
 
 import torch  
 import torch.nn as nn  
@@ -22,22 +22,18 @@ class MultiLabelClassifierPro:
         self.model, _, preprocess_func = open_clip.create_model_and_transforms(model_name, pretrained=False)  
         self.preprocess_func = preprocess_func          
         ckpt = torch.load(ckpt_path, map_location='cpu')  
-        self.model.load_state_dict(ckpt)          
-        self.model.to(self.device).eval()  
+        self.model.load_state_dict(ckpt)
+        self.model.eval()
+        self.model = self.model.to(self.device)  
 
-        # Modify fully connected layer  
-        self.fc = nn.Sequential(  
-            nn.Linear(self.get_visual_output_dim(), num_classes),  
-            nn.ReLU(),  
-            nn.Dropout(0.5),  
-            nn.Linear(num_classes, num_classes)  
-        ).to(self.device)  
-        
-        # Handle model deployment on multiple GPUs if available  
+        # 用DataParallel包装模型以支持多GPU  
         if torch.cuda.device_count() > 1:  
-            self.fc = nn.DataParallel(self.fc)  
             self.model = nn.DataParallel(self.model)  
 
+        # add fully connected layer  
+        self.fc = nn.Linear(self.get_visual_output_dim(), num_classes).to(self.device)  
+        if torch.cuda.device_count() > 1:  
+            self.fc = nn.DataParallel(self.fc)  
        
         self.criterion = nn.BCEWithLogitsLoss()  
         self.optimizer = optim.Adam(self.fc.parameters(), lr=0.001)  
@@ -45,31 +41,37 @@ class MultiLabelClassifierPro:
         # self.optimizer = optim.RMSprop(self.fc.parameters(), lr=lr, momentum=0.9)  
         # self.optimizer = AdaBelief(self.fc.parameters(), lr=lr, eps=1e-12, betas=(0.9, 0.999), weight_decay=0, amsgrad=False)  
 
-
     def get_visual_output_dim(self):  
-        return self.model.module.visual.output_dim if isinstance(self.model, nn.DataParallel) else self.model.visual.output_dim  
-
+        if isinstance(self.model, nn.DataParallel):  
+            return self.model.module.visual.output_dim  
+        else:  
+            return self.model.visual.output_dim  
+        
     def get_image_features(self, images):  
         images = images.to(self.device)  
         with torch.no_grad():  
-            image_features = self.model.module.encode_image(images)  
+            if isinstance(self.model, nn.DataParallel):  
+                image_features = self.model.module.encode_image(images)  
+            else:  
+                image_features = self.model.encode_image(images)  
+        
         return image_features / image_features.norm(dim=-1, keepdim=True)  
 
     def train_model(self, train_loader, val_loader, num_epochs=20):                   
         scheduler = StepLR(self.optimizer, step_size=5, gamma=0.1)  
         scaler = torch.cuda.amp.GradScaler()  
-                
+        self.fc.train() 
+
         for epoch in range(num_epochs): 
-            self.fc.train()  
             total_loss = 0.0  
             start_time = time.time()  # Start time for the epoch  
 
             for images, targets in train_loader:  
-                images, targets = images.to(self.device), targets.to(self.device).float()  
+                images, targets = images.to(self.device), targets.to(self.device)
                 self.optimizer.zero_grad()  
                 
                 with torch.cuda.amp.autocast():  
-                    features = self.get_image_features(images)  
+                    features = self.get_image_features(images)
                     outputs = self.fc(features)  
                     loss = self.criterion(outputs, targets)  
                 
@@ -87,32 +89,63 @@ class MultiLabelClassifierPro:
             
             # Evaluate on validation set every 5 epochs  
             if (epoch + 1) % 5 == 0:  
-                self.evaluate_model(val_loader)  
+                self.evaluate(val_loader)   
+                self.fc.train()  
 
-    def evaluate_model(self, dataloader):  
-        self.fc.eval()  
-        all_targets, all_predictions = [], []  
+
+    # def evaluate_model(self, dataloader):  
+    #     self.fc.eval()  
+    #     all_targets, all_predictions = [], []  
         
+    #     with torch.no_grad():  
+    #         for images, targets in dataloader:  
+    #             images, targets = images.to(self.device), targets.to(self.device).float()  
+                
+    #             with torch.cuda.amp.autocast():  
+    #                 features = self.get_image_features(images).to(self.device)
+    #                 outputs = self.fc(features)  
+                
+    #             all_targets.append(targets.cpu().numpy())  
+    #             all_predictions.append(outputs.sigmoid().cpu().numpy())  
+        
+    #     all_targets = np.concatenate(all_targets, axis=0)  
+    #     all_predictions = np.concatenate(all_predictions, axis=0)  
+        
+    #     threshold = 0.5  
+    #     all_predictions_bin = (all_predictions > threshold).astype(int)  
+    #     f1 = f1_score(all_targets, all_predictions_bin, average='weighted', zero_division=1)  
+        
+    #     print(f"F1 Score: {f1:.4f}")  
+    #     return f1  
+
+    def evaluate(self, dataloader):  
+        self.model.eval()  
+        all_labels = []  
+        all_predictions = []
+
+        total_loss = 0.0  
         with torch.no_grad():  
-            for images, targets in dataloader:  
-                images, targets = images.to(self.device), targets.to(self.device).float()  
+            for images, labels in dataloader:  
+                images, labels = images.to(self.device), labels.to(self.device)                  
+                features = self.get_image_features(images)
+                outputs = self.fc(features)
+
+                loss = self.criterion(outputs, labels)  
+                total_loss += loss.item()  
                 
-                with torch.cuda.amp.autocast():  
-                    features = self.get_image_features(images)  
-                    outputs = self.fc(features)  
-                
-                all_targets.append(targets.cpu().numpy())  
-                all_predictions.append(outputs.sigmoid().cpu().numpy())  
+                all_labels.extend(labels.cpu().numpy())  
+                all_predictions.extend(outputs.sigmoid().cpu().numpy())  
         
-        all_targets = np.concatenate(all_targets, axis=0)  
-        all_predictions = np.concatenate(all_predictions, axis=0)  
-        
-        threshold = 0.5  
-        all_predictions_bin = (all_predictions > threshold).astype(int)  
-        f1 = f1_score(all_targets, all_predictions_bin, average='weighted', zero_division=1)  
-        
-        print(f"F1 Score: {f1:.4f}")  
-        return f1  
+        avg_loss = total_loss / len(dataloader)  
+        print(f'Validation Loss: {avg_loss}')  
+
+        # Threshold outputs for F1 score calculation  
+        thresholded_predictions = [[1 if out >= 0.5 else 0 for out in sample] for sample in all_predictions]         
+        f1 = f1_score(all_labels, thresholded_predictions, average='macro', zero_division=1)  
+        print(f'F1 Score: {f1}')  
+
+        return avg_loss  
+
 
     # def save_model(self, path):  
     #     torch.save({  

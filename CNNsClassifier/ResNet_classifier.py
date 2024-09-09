@@ -11,6 +11,7 @@ import pandas as pd
 from sklearn.metrics import f1_score  
 from torchvision.models import ResNet101_Weights  
 import time  
+import torch.optim.lr_scheduler as lr_scheduler  
 
 
 class ResNetMultiLabelClassifier:  
@@ -30,8 +31,9 @@ class ResNetMultiLabelClassifier:
                 
         # Define the loss function and optimizer  
         self.criterion = nn.BCEWithLogitsLoss()  
-        self.optimizer = optim.Adam(self.model.parameters(), lr=0.001)  
-
+        self.optimizer = optim.Adam(self.model.parameters(), lr=0.001) 
+        self.scheduler = lr_scheduler.ReduceLROnPlateau(self.optimizer, mode='min', factor=0.1, patience=5, verbose=True)  
+ 
         # Preprocess function for image transformation  
         self.preprocess_func = transforms.Compose([  
             transforms.Resize((224, 224)),  
@@ -61,8 +63,10 @@ class ResNetMultiLabelClassifier:
             print(f'Epoch {epoch+1}/{num_epochs}, Loss: {running_loss / len(train_dataloader)}, Time: {epoch_duration:.2f} seconds')  
 
             if (epoch + 1) % 5 == 0:  
-                self.evaluate(val_dataloader)   
+                val_loss = self.evaluate(val_dataloader)   
+                self.scheduler.step(val_loss)  
                 self.model.train()  
+
 
     def evaluate(self, dataloader):  
         self.model.eval()  
@@ -76,16 +80,22 @@ class ResNetMultiLabelClassifier:
                 outputs = self.model(inputs)  
                 loss = self.criterion(outputs, labels)  
                 total_loss += loss.item()  
+                
+                all_labels.extend(labels.cpu().numpy())  
+                all_predictions.extend(outputs)  
         
         avg_loss = total_loss / len(dataloader)  
         print(f'Validation Loss: {avg_loss}')  
 
+        # Threshold outputs for F1 score calculation  
+        thresholded_predictions = [[1 if out >= 0.5 else 0 for out in sample] for sample in all_predictions]  
+        
         # Calculate F1 score  
-        f1 = f1_score(all_labels, all_predictions, average='macro', zero_division=1)  
-
-        print(f'F1 Score: {f1}') 
+        f1 = f1_score(all_labels, thresholded_predictions, average='macro', zero_division=1)  
+        print(f'F1 Score: {f1}')  
 
         return avg_loss  
+
 
     def classify_image(self, image_path):  
         try:  
@@ -99,7 +109,9 @@ class ResNetMultiLabelClassifier:
         with torch.no_grad():  
             output = self.model(image)  
             probabilities = torch.sigmoid(output).squeeze().cpu().numpy()  
+        
         return probabilities  
+
 
     def classify_images_in_folder(self, folder_path, output_csv):  
         results = []  
