@@ -7,8 +7,8 @@ from sklearn.model_selection import train_test_split
 sys.path.append('/home/nw/Codes/data_loader')  
 sys.path.append('/home/nw/Codes/RemoteCLIP/Image_Classification/src')  
 
-from remote_clip_ml_knn import RemoteCLIPClassifierMLKNN
-# from remote_clip_rank_svm import RemoteCLIPClassifierRankSVM
+from remote_clip_mlknn import RemoteCLIPClassifierMLKNN
+from remote_clip_ranksvm import RemoteCLIPClassifierRankSVM
 from MLRSNet_loader import MLRSNetDataset
 
 
@@ -47,11 +47,14 @@ if __name__ == "__main__":
     data = load_MLRSNet_data(images_dir, labels_dir)  
 
     # 划分数据集  
-    train_data, test_data = train_test_split(data, test_size=0.99, random_state=42) 
+    train_data, test_data = train_test_split(data, test_size=0.8, random_state=42) 
 
     # 初始化模型  
     num_labels = 60
-    classifier = RemoteCLIPClassifierMLKNN(checkpoint_path, model_name)  
+    # classifier = RemoteCLIPClassifierMLKNN(checkpoint_path, model_name)  
+    
+    classifier = RemoteCLIPClassifierRankSVM(checkpoint_path, model_name)  
+
 
     # 创建训练和测试数据集  
     train_dataset = MLRSNetDataset(train_data, classifier.preprocess_func)  
@@ -65,5 +68,6 @@ if __name__ == "__main__":
     test_loader  = DataLoader(test_dataset, batch_size=128, num_workers=12, shuffle=True)  
    
     # 训练模型   
-    classifier.fit_knn(train_loader)  
+    # classifier.fit_knn(train_loader)  
+    classifier.train_model(train_loader)  
     classifier.evaluate(test_loader)

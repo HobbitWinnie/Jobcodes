@@ -21,7 +21,7 @@ class RemoteCLIPClassifierMLKNN:
         self.model.load_state_dict(ckpt)  
         self.model = self.model.to(self.device).eval()  
 
-        self.mlknn = MLkNN(k=n_neighbors, s=s)  
+        self.mlknn = MLkNN()  
         self.label_to_index = None  # Map label names to indices  
 
     def get_image_features(self, images):  
@@ -40,13 +40,12 @@ class RemoteCLIPClassifierMLKNN:
             images = images.to(self.device)  
             features = self.get_image_features(images)  
             train_image_features.append(features)  
-            train_labels.extend(labels.numpy())  # Assuming labels are arrays/lists of label indices  
+            train_labels.extend(labels.numpy().astype(int))  # Ensure labels are integers  
 
         train_image_features = np.vstack(train_image_features)  
         train_labels = np.array(train_labels)  
 
         self.mlknn.fit(train_image_features, train_labels)  
-
 
     def evaluate(self, dataloader):  
         all_true_labels = []  
@@ -57,7 +56,7 @@ class RemoteCLIPClassifierMLKNN:
             features = self.get_image_features(images)  
             predicted = self.mlknn.predict(features)  
 
-            all_true_labels.extend(labels.numpy())  
+            all_true_labels.extend(labels.numpy().astype(int))  
             all_predicted_labels.extend(predicted.toarray())  
 
         all_true_labels = np.array(all_true_labels)  
