@@ -64,8 +64,8 @@ if __name__ == "__main__":
     print(f"Training dataset size: {len(train_dataset)}")  
     print(f"Testing dataset size: {len(test_dataset)}")  
 
-    train_loader  = DataLoader(train_dataset, batch_size=128, num_workers=12, shuffle=True)  
-    test_loader  = DataLoader(test_dataset, batch_size=128, num_workers=12, shuffle=True)  
+    train_loader  = DataLoader(train_dataset, batch_size=64, num_workers=12, shuffle=True)  
+    test_loader  = DataLoader(test_dataset, batch_size=64, num_workers=12, shuffle=True)  
    
     # 训练模型   
     # classifier.fit_knn(train_loader)  

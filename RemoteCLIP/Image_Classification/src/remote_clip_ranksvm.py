@@ -1,5 +1,5 @@
 import os  
-os.environ["CUDA_VISIBLE_DEVICES"] = "0,2,3"  # 指定显卡  
+os.environ["CUDA_VISIBLE_DEVICES"] = "3"  
 
 import torch  
 import numpy as np  
@@ -8,8 +8,7 @@ import pandas as pd
 from PIL import Image  
 from sklearn.multiclass import OneVsRestClassifier  
 from sklearn.svm import SVC  
-from sklearn.preprocessing import MultiLabelBinarizer, StandardScaler  
-from sklearn.model_selection import GridSearchCV  
+from sklearn.preprocessing import StandardScaler  
 import open_clip  
 from sklearn.metrics import f1_score, fbeta_score  
 
@@ -33,7 +32,7 @@ class RemoteCLIPClassifierRankSVM:
 
         # Initialize the OneVsRestClassifier with a linear SVM  
         self.rank_svm = OneVsRestClassifier(SVC(kernel='linear'))  
-        self.mlb = MultiLabelBinarizer()  
+        self.scaler = StandardScaler()  
 
     def get_image_features(self, images):  
         images = images.to(self.device)  
@@ -49,70 +48,50 @@ class RemoteCLIPClassifierRankSVM:
             for images, labels in dataloader:  
                 image_features = self.get_image_features(images.to(self.device))  
                 train_image_features.append(image_features)  
-                train_labels.extend(labels.numpy())  
+                train_labels.extend(labels.numpy().astype(int))
 
         train_image_features = np.concatenate(train_image_features)  
         train_labels = np.array(train_labels)  
 
-        # Create label list and binarize it  
-        train_labels_list = [np.where(row == 1)[0].tolist() for row in train_labels]  
-        binarized_labels = self.mlb.fit_transform(train_labels_list)  
-
         # Feature scaling  
-        scaler = StandardScaler()  
-        train_image_features = scaler.fit_transform(train_image_features)  
+        train_image_features = self.scaler.fit_transform(train_image_features)  
 
-        logger.info(f"Features dtype: {train_image_features.dtype}")  
-
-        # Hyperparameter tuning using GridSearchCV  
-        param_grid = {'estimator__C': [0.1, 1.0, 10]}  
-        grid = GridSearchCV(self.rank_svm, param_grid, cv=5, n_jobs=-1)  
-        grid.fit(train_image_features, binarized_labels)  
-        self.rank_svm = grid.best_estimator_  
+        # Train RankSVM  
+        self.rank_svm.fit(train_image_features, train_labels)  
+        logger.info("RankSVM training completed.") 
 
     def evaluate(self, dataloader):  
-        self.model.eval()  
         all_labels = []  
         all_predictions = []  
 
         with torch.no_grad():  
             for images, labels in dataloader:  
-                images = self.preprocess_func(images).to(self.device)  
-                batch_labels = [np.where(label.numpy() == 1)[0].tolist() for label in labels]  
-                all_labels.extend(batch_labels)  
+                images = images.to(self.device)  
+                image_features = self.get_image_features(images)  
+                image_features = self.scaler.transform(image_features)  
+                predictions = self.rank_svm.predict(image_features)  
+                
+                all_labels.extend(labels.numpy().astype(int))  
+                all_predictions.extend(predictions)  
+        
+        all_labels = np.array(all_labels)  
+        all_predicted_labels = np.array(all_predicted_labels)  
 
-                for image in images:  
-                    predicted_label = self.classify_image(image.unsqueeze(0))  
-                    predicted_index = self.mlb.classes_.tolist().index(predicted_label)  
-                    all_predictions.append([predicted_index])  
-
-        # Binarize predictions and true labels  
-        binarized_labels = self.mlb.transform(all_labels)  
-        binarized_predictions = self.mlb.transform(all_predictions)  
-
-        f1 = f1_score(binarized_labels, binarized_predictions, average='macro', zero_division=1)  
+        f1 = f1_score(all_labels, all_predictions, average='macro', zero_division=1)  
+        f2 = fbeta_score(all_labels, all_predictions, beta=2, average='macro', zero_division=1)  
+        
         logger.info(f'F1 Score: {f1}')  
-
-        f2 = fbeta_score(binarized_labels, binarized_predictions, beta=2, average='macro', zero_division=1)  
         logger.info(f'F2 Score: {f2}')  
 
-        return f1, f2   
+        return f1, f2  
     
-
     def classify_image(self, query_image):  
-        query_image = query_image.to(self.device)  
-        query_image_features = self.get_image_features(query_image)  
-
-        # Get decision scores from the trained SVM model  
-        scores = self.rank_svm.decision_function(query_image_features)  
-
-        scores = self.rank_svm.decision_function(query_image_features)  
-        top_index = scores.argmax()  
-        top_label = self.mlb.classes_[top_index]  
-
-        return top_label
+        image = self.preprocess_func(image).unsqueeze(0).to(self.device)  
+        image_features = self.get_image_features(image)  
+        image_features = self.scaler.transform(image_features)          
+        prediction = self.rank_svm.predict(image_features) 
+        return prediction  
     
-
     def classify_images_in_folder(self, folder_path, output_csv):  
         results = []  
         valid_extensions = ('.png', '.jpg', '.jpeg', '.bmp', '.gif')  
