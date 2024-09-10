@@ -47,7 +47,7 @@ if __name__ == "__main__":
     data = load_MLRSNet_data(images_dir, labels_dir)  
 
     # 划分数据集  
-    train_data, test_data = train_test_split(data, test_size=0.8, random_state=42) 
+    train_data, test_data = train_test_split(data, test_size=0.5, random_state=42) 
 
     # 初始化模型  
     num_labels = 60

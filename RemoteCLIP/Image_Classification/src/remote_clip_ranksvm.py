@@ -70,7 +70,7 @@ class RemoteCLIPClassifierRankSVM:
         grid.fit(train_image_features, binarized_labels)  
         self.rank_svm = grid.best_estimator_  
 
-    def evaluate(self, dataloader, top_k=3):  
+    def evaluate(self, dataloader):  
         self.model.eval()  
         all_labels = []  
         all_predictions = []  
@@ -82,38 +82,36 @@ class RemoteCLIPClassifierRankSVM:
                 all_labels.extend(batch_labels)  
 
                 for image in images:  
-                    top_labels, _ = self.classify_image(image.unsqueeze(0), top_k)  
-                    predicted_indices = [self.mlb.classes_.tolist().index(label) for label in top_labels]  
-                    all_predictions.append(predicted_indices)  
+                    predicted_label = self.classify_image(image.unsqueeze(0))  
+                    predicted_index = self.mlb.classes_.tolist().index(predicted_label)  
+                    all_predictions.append([predicted_index])  
 
         # Binarize predictions and true labels  
         binarized_labels = self.mlb.transform(all_labels)  
         binarized_predictions = self.mlb.transform(all_predictions)  
 
-        # Calculate F1 score  
         f1 = f1_score(binarized_labels, binarized_predictions, average='macro', zero_division=1)  
         logger.info(f'F1 Score: {f1}')  
 
-        # Calculate F2 score  
         f2 = fbeta_score(binarized_labels, binarized_predictions, beta=2, average='macro', zero_division=1)  
         logger.info(f'F2 Score: {f2}')  
 
-        return f1, f2  
+        return f1, f2   
     
-    
-    def classify_image(self, query_image, top_k=3):  
+
+    def classify_image(self, query_image):  
         query_image = query_image.to(self.device)  
         query_image_features = self.get_image_features(query_image)  
 
         # Get decision scores from the trained SVM model  
         scores = self.rank_svm.decision_function(query_image_features)  
 
-        # Handle scores to get top_k classes  
-        top_indices = np.argsort(scores[0])[::-1][:top_k]  
-        top_labels = [self.mlb.classes_[i] for i in top_indices]  
-        top_scores = scores[0][top_indices]  
+        scores = self.rank_svm.decision_function(query_image_features)  
+        top_index = scores.argmax()  
+        top_label = self.mlb.classes_[top_index]  
 
-        return top_labels, top_scores  
+        return top_label
+    
 
     def classify_images_in_folder(self, folder_path, output_csv):  
         results = []  
