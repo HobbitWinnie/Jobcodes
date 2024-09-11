@@ -47,7 +47,7 @@ if __name__ == "__main__":
     data = load_MLRSNet_data(images_dir, labels_dir)  
 
     # 划分数据集  
-    train_data, test_data = train_test_split(data, test_size=0.5, random_state=42) 
+    train_data, test_data = train_test_split(data, test_size=0.8, random_state=42) 
 
     # 初始化模型  
     num_labels = 60
@@ -64,8 +64,8 @@ if __name__ == "__main__":
     print(f"Training dataset size: {len(train_dataset)}")  
     print(f"Testing dataset size: {len(test_dataset)}")  
 
-    train_loader  = DataLoader(train_dataset, batch_size=64, num_workers=12, shuffle=True)  
-    test_loader  = DataLoader(test_dataset, batch_size=64, num_workers=12, shuffle=True)  
+    train_loader  = DataLoader(train_dataset, batch_size=192, num_workers=42, shuffle=True)  
+    test_loader  = DataLoader(test_dataset, batch_size=192, num_workers=42, shuffle=True)  
    
     # 训练模型   
     # classifier.fit_knn(train_loader)  

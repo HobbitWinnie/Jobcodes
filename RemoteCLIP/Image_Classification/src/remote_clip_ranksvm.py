@@ -1,16 +1,18 @@
 import os  
 os.environ["CUDA_VISIBLE_DEVICES"] = "3"  
 
+import logging  
+import time  
+import open_clip  
 import torch  
 import numpy as np  
-import logging  
-import pandas as pd  
+from datetime import datetime  
 from PIL import Image  
 from sklearn.multiclass import OneVsRestClassifier  
 from sklearn.svm import SVC  
 from sklearn.preprocessing import StandardScaler  
-import open_clip  
 from sklearn.metrics import f1_score, fbeta_score  
+
 
 # Set up logging  
 logging.basicConfig(level=logging.INFO)  
@@ -42,8 +44,13 @@ class RemoteCLIPClassifierRankSVM:
         return image_features.cpu().numpy().astype(np.float32)  
 
     def train_model(self, dataloader):  
+        start_time = time.time()  # Start time for the epoch  
+        current_time = datetime.now().strftime('%H:%M:%S')  
+        logger.info("RemoteCLIP_RankSVM training start. Time: {}".format(current_time))  
+
         train_image_features = []  
         train_labels = []  
+
         with torch.no_grad():  
             for images, labels in dataloader:  
                 image_features = self.get_image_features(images.to(self.device))  
@@ -58,11 +65,18 @@ class RemoteCLIPClassifierRankSVM:
 
         # Train RankSVM  
         self.rank_svm.fit(train_image_features, train_labels)  
-        logger.info("RankSVM training completed.") 
+        
+        end_time = time.time()  # End time for the epoch  
+        epoch_duration = end_time - start_time  # Calculate the duration 
+        logger.info("RemoteCLIP_RankSVM training completed. Time: {:.2f} seconds".format(epoch_duration))  
 
     def evaluate(self, dataloader):  
+        start_time = time.time()
+        current_time = datetime.now().strftime('%H:%M:%S')  
+        logger.info("RemoteCLIP_RankSVM evaluating start. Time: {}".format(current_time))  
+
         all_labels = []  
-        all_predictions = []  
+        all_predictions = [] 
 
         with torch.no_grad():  
             for images, labels in dataloader:  
@@ -75,17 +89,21 @@ class RemoteCLIPClassifierRankSVM:
                 all_predictions.extend(predictions)  
         
         all_labels = np.array(all_labels)  
-        all_predicted_labels = np.array(all_predicted_labels)  
+        all_predictions = np.array(all_predictions)  
 
         f1 = f1_score(all_labels, all_predictions, average='macro', zero_division=1)  
         f2 = fbeta_score(all_labels, all_predictions, beta=2, average='macro', zero_division=1)  
+        
+        end_time = time.time()  # End time for the epoch  
+        epoch_duration = end_time - start_time  # Calculate the duration 
+        logger.info("RemoteCLIP_RankSVM evaluating completed. Time: {:.2f} seconds".format(epoch_duration))  
         
         logger.info(f'F1 Score: {f1}')  
         logger.info(f'F2 Score: {f2}')  
 
         return f1, f2  
     
-    def classify_image(self, query_image):  
+    def classify_image(self, image):  
         image = self.preprocess_func(image).unsqueeze(0).to(self.device)  
         image_features = self.get_image_features(image)  
         image_features = self.scaler.transform(image_features)          

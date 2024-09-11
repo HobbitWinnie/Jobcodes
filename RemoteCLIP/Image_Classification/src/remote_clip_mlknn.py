@@ -1,11 +1,21 @@
-import torch  
+import os  
+os.environ["CUDA_VISIBLE_DEVICES"] = "3"  
+
+import logging  
+import time
+import torch
+import open_clip  
 import numpy as np  
+import pandas as pd  
+from datetime import datetime  
 from skmultilearn.adapt import MLkNN  
 from sklearn.metrics import f1_score, fbeta_score  
-import open_clip  
 from PIL import Image  
-import pandas as pd  
-import os  
+
+
+# Set up logging  
+logging.basicConfig(level=logging.INFO)  
+logger = logging.getLogger(__name__) 
 
 class RemoteCLIPClassifierMLKNN:  
     def __init__(self, ckpt_path, model_name='ViT-L-14', device=None, n_neighbors=10, s=1.0):  
@@ -32,6 +42,10 @@ class RemoteCLIPClassifierMLKNN:
         return image_features.cpu().numpy()  
 
     def fit_knn(self, dataloader):  
+        start_time = time.time()  # Start time for the epoch  
+        current_time = datetime.now().strftime('%H:%M:%S')  
+        logger.info("RemoteCLIP_MLKNN training start. Time: {}".format(current_time))  
+
         train_image_features = []  
         train_labels = []  
 
@@ -46,8 +60,17 @@ class RemoteCLIPClassifierMLKNN:
         train_labels = np.array(train_labels)  
 
         self.mlknn.fit(train_image_features, train_labels)  
+        
+        end_time = time.time()  # End time for the epoch  
+        epoch_duration = end_time - start_time  # Calculate the duration 
+        logger.info("RemoteCLIP_MLKNN training completed. Time: {:.2f} seconds".format(epoch_duration))  
+
 
     def evaluate(self, dataloader):  
+        start_time = time.time()
+        current_time = datetime.now().strftime('%H:%M:%S')  
+        logger.info("RemoteCLIP_MLKNN evaluating start. Time: {}".format(current_time))  
+
         all_true_labels = []  
         all_predicted_labels = []  
 
@@ -64,9 +87,13 @@ class RemoteCLIPClassifierMLKNN:
 
         f1 = f1_score(all_true_labels, all_predicted_labels, average='macro', zero_division=1)  
         f2 = fbeta_score(all_true_labels, all_predicted_labels, beta=2, average='macro', zero_division=1)  
+        
+        end_time = time.time()  # End time for the epoch  
+        epoch_duration = end_time - start_time  # Calculate the duration 
+        logger.info("RemoteCLIP_MLKNN evaluating completed. Time: {:.2f} seconds".format(epoch_duration))  
 
-        print(f'F1 Score: {f1}')  
-        print(f'F2 Score: {f2}')  
+        logger.info(f'F1 Score: {f1}')  
+        logger.info(f'F2 Score: {f2}')    
 
         return f1, f2
     
