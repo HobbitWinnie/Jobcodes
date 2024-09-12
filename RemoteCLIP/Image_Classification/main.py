@@ -9,6 +9,8 @@ sys.path.append('/home/nw/Codes/RemoteCLIP/Image_Classification/src')
 
 from remote_clip_mlknn import RemoteCLIPClassifierMLKNN
 from remote_clip_ranksvm import RemoteCLIPClassifierRankSVM
+from remote_clip_mlfc import RemoteCLIPClassifierFC
+
 from MLRSNet_loader import MLRSNetDataset
 
 
@@ -51,9 +53,11 @@ if __name__ == "__main__":
 
     # 初始化模型  
     num_labels = 60
-    # classifier = RemoteCLIPClassifierMLKNN(checkpoint_path, model_name)  
+    # classifier = RemoteCLIPClassifierMLKNN(checkpoint_path, model_name)      
+    # classifier = RemoteCLIPClassifierRankSVM(checkpoint_path, model_name)  
     
-    classifier = RemoteCLIPClassifierRankSVM(checkpoint_path, model_name)  
+    classifier = RemoteCLIPClassifierFC(checkpoint_path, num_labels, model_name)  
+
 
 
     # 创建训练和测试数据集  
@@ -69,5 +73,8 @@ if __name__ == "__main__":
    
     # 训练模型   
     # classifier.fit_knn(train_loader)  
-    classifier.train_model(train_loader)  
-    classifier.evaluate(test_loader)
+
+    # classifier.train_model(train_loader)  
+    # classifier.evaluate(test_loader)
+
+    classifier.train_model(train_loader, test_loader, num_epochs=100)  
