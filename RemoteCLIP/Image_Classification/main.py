@@ -3,6 +3,8 @@ import sys
 from torch.utils.data import DataLoader  
 import pandas as pd  
 from sklearn.model_selection import train_test_split  
+import torchvision.transforms as transforms  
+
 
 sys.path.append('/home/nw/Codes/data_loader')  
 sys.path.append('/home/nw/Codes/RemoteCLIP/Image_Classification/src')  
@@ -10,8 +12,17 @@ sys.path.append('/home/nw/Codes/RemoteCLIP/Image_Classification/src')
 from remote_clip_mlknn import RemoteCLIPClassifierMLKNN
 from remote_clip_ranksvm import RemoteCLIPClassifierRankSVM
 from remote_clip_mlfc import RemoteCLIPClassifierFC
+from remoteclip_multilabel import RemoteCLIPClassifierFCTest
 
 from MLRSNet_loader import MLRSNetDataset
+
+
+def get_augmentation_transforms():  
+    return transforms.Compose([  
+        transforms.RandomResizedCrop(224),  
+        transforms.RandomHorizontalFlip(),  
+        transforms.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2, hue=0.2),  
+    ])  
 
 
 def load_MLRSNet_data(images_dir, labels_dir):  
@@ -55,13 +66,15 @@ if __name__ == "__main__":
     num_labels = 60
     # classifier = RemoteCLIPClassifierMLKNN(checkpoint_path, model_name)      
     # classifier = RemoteCLIPClassifierRankSVM(checkpoint_path, model_name)  
-    
-    classifier = RemoteCLIPClassifierFC(checkpoint_path, num_labels, model_name)  
-
+    # classifier = RemoteCLIPClassifierFC(checkpoint_path, num_labels, model_name)  
+    classifier = RemoteCLIPClassifierFCTest(checkpoint_path, num_labels, model_name)  
 
 
     # 创建训练和测试数据集  
-    train_dataset = MLRSNetDataset(train_data, classifier.preprocess_func)  
+    # train_dataset = MLRSNetDataset(train_data, classifier.preprocess_func)  
+
+    augmentation_transforms = get_augmentation_transforms()
+    train_dataset = MLRSNetDataset(train_data, preprocess_func=transforms.Compose([augmentation_transforms, classifier.preprocess_func]))  
     test_dataset = MLRSNetDataset(test_data, classifier.preprocess_func)  
 
     # 打印数据集的样本数量  

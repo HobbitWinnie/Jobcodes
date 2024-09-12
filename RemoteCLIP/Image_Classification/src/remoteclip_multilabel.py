@@ -1,34 +1,53 @@
 import os  
-import sys  
 import torch  
-from torch import nn, optim  
+import logging  
+import time  
+import open_clip  
 import numpy as np  
 import pandas as pd  
-import open_clip  
+from torch import nn, optim  
+from datetime import datetime  
 from PIL import Image  
-from sklearn.metrics import f1_score, average_precision_score, roc_auc_score  
-from torch.optim.lr_scheduler import StepLR  
+from sklearn.metrics import f1_score, fbeta_score  
+from torch.optim.lr_scheduler import OneCycleLR  
+import torchvision.transforms as transforms  
+from torch.utils.data import DataLoader, Dataset  
 
-sys.path.append('/home/nw/Codes/RemoteCLIP/src/loss_functions')  
-from loss_functions import FocalLoss, DiceLoss, LabelSmoothingLoss  # 导入损失函数  
+# Set up logging  
+logging.basicConfig(level=logging.INFO)  
+logger = logging.getLogger(__name__)  
 
 
-class MultiLabelClassifier:  
-    def __init__(self, ckpt_path, model_name='ViT-L-14', device=None):  
+class RemoteCLIPClassifierFCTest:  
+    def __init__(self, ckpt_path, num_labels, model_name='ViT-L-14', device=None):  
         self.model_name = model_name  
-        self.device = device if device else ('cuda' if torch.cuda.is_available() else 'cpu')  
-        print(f"Running on device: {self.device}")  
-
+        self.device = device or ('cuda' if torch.cuda.is_available() else 'cpu')  
+        
+        # Load CLIP model and preprocessing function  
         self.model, _, preprocess_func = open_clip.create_model_and_transforms(self.model_name)  
-        self.preprocess_func = preprocess_func  
-        self.tokenizer = open_clip.get_tokenizer(self.model_name)  
-
         ckpt = torch.load(ckpt_path, map_location='cpu')  
         self.model.load_state_dict(ckpt)  
         self.model = self.model.to(self.device).eval()  
+        
+        # Freeze all layers except the last few  
+        for param in self.model.parameters():  
+            param.requires_grad = False  
+        
+        # Initialize the final classifier layer with BatchNorm and Dropout  
+        self.fc = nn.Sequential(  
+            nn.Linear(self.model.visual.output_dim, 512),  
+            nn.BatchNorm1d(512),  
+            nn.ReLU(),  
+            nn.Dropout(0.5),  
+            nn.Linear(512, num_labels)  
+        ).to(self.device)  
+        
+        self.criterion = nn.BCEWithLogitsLoss()  
+        self.optimizer = optim.AdamW(self.fc.parameters(), lr=0.001)  
+        self.scheduler = None  # Will be initialized in train_model  
 
-        self.fc = None  
-        self.optimizer = None  # 初始化优化器  
+        # Set the preprocess function  
+        self.preprocess_func = preprocess_func  
 
     def get_image_features(self, images):  
         images = images.to(self.device)  
@@ -37,91 +56,71 @@ class MultiLabelClassifier:
         image_features /= image_features.norm(dim=-1, keepdim=True)  
         return image_features  
 
-    def train_model(self, dataloader, num_labels, num_epochs=2, lr=1e-4, loss_type='bce', **kwargs):  
-        output_dim = self.model.module.visual.output_dim if isinstance(self.model, torch.nn.parallel.DistributedDataParallel) else self.model.visual.output_dim  
-
-        # 添加新的全连接层  
-        self.fc = nn.Sequential(  
-            nn.Linear(output_dim, 512),  
-            nn.ReLU(),  
-            nn.Linear(512, 256),  
-            nn.ReLU(),  
-            nn.Linear(256, num_labels)  
-        ).to(self.device)  
-
-        if loss_type == 'bce':  
-            criterion = nn.BCEWithLogitsLoss()  
-        elif loss_type == 'focal':  
-            criterion = FocalLoss(**kwargs)  
-        elif loss_type == 'dice':  
-            criterion = DiceLoss()  
-        elif loss_type == 'label_smoothing':  
-            criterion = LabelSmoothingLoss(classes=num_labels)  
-        else:  
-            raise ValueError("Unsupported loss type. Choose from 'bce', 'focal', 'dice', 'label_smoothing'.")  
-        
-        self.optimizer = optim.AdamW(self.fc.parameters(), lr=lr)  
-        scheduler = StepLR(self.optimizer, step_size=5, gamma=0.1)  
+    def train_model(self, train_dataloader, val_dataloader, num_epochs=50):   
+        logger.info("开始训练 RemoteCLIP_FC.")  
         scaler = torch.cuda.amp.GradScaler()  
+        
+        # Initialize OneCycleLR scheduler  
+        self.scheduler = OneCycleLR(self.optimizer, max_lr=0.01, steps_per_epoch=len(train_dataloader), epochs=num_epochs)  
         
         self.fc.train()  
         for epoch in range(num_epochs):  
+            epoch_start_time = time.time()  
             total_loss = 0.0  
-            for i, (images, targets, _) in enumerate(dataloader):  
-                images = images.to(self.device)  
-                targets = targets.to(self.device).float()  
-                
+            for images, targets in train_dataloader:  
+                images, targets = images.to(self.device), targets.to(self.device).float()  
+
                 self.optimizer.zero_grad()  
                 
                 with torch.cuda.amp.autocast():  
                     features = self.get_image_features(images)  
                     outputs = self.fc(features)  
-                    loss = criterion(outputs, targets)  
+                    loss = self.criterion(outputs, targets)  
                 
                 scaler.scale(loss).backward()  
                 scaler.step(self.optimizer)  
                 scaler.update()  
                 
-                total_loss += loss.item()                 
-  
-            scheduler.step()  
+                total_loss += loss.item()  
+                self.scheduler.step()  # Update learning rate  
 
-            # 每隔10次打印一次训练信息和精度   
-            if (epoch + 1) % 10 == 0:  
-                print(f"Epoch [{epoch+1}/{num_epochs}], Average Loss: {total_loss/len(dataloader):.4f}")  
+            avg_loss = total_loss / len(train_dataloader)  
+            epoch_duration = time.time() - epoch_start_time  
+            logger.info(f'Epoch {epoch+1}/{num_epochs} , Loss: {avg_loss:.4f}, Duration: {epoch_duration:.2f}s')  
 
-            
+            # Validate every 5 epochs if validation data is provided  
+            if val_dataloader and (epoch + 1) % 5 == 0:  
+                self.evaluate_model(val_dataloader)  
+                self.fc.train()  
+    
     def evaluate_model(self, dataloader):  
         self.fc.eval()  
-        all_targets = []  
-        all_predictions = []  
-
+        all_targets, all_predictions = [], []  
+          
         with torch.no_grad():  
-            for images, targets, _ in dataloader:  
+            for images, targets in dataloader:  
                 images = images.to(self.device)  
-                targets = targets.to(self.device).float()  
-
+                targets = targets.cpu().numpy()  
+                
                 with torch.cuda.amp.autocast():  
                     features = self.get_image_features(images)  
                     outputs = self.fc(features)  
                 
-                all_targets.append(targets.cpu().numpy())  
+                all_targets.append(targets)  
                 all_predictions.append(outputs.sigmoid().cpu().numpy())  
-
+        
         all_targets = np.concatenate(all_targets, axis=0)  
         all_predictions = np.concatenate(all_predictions, axis=0)  
         
         threshold = 0.5  
         all_predictions_bin = (all_predictions > threshold).astype(int)  
-        f1 = f1_score(all_targets, all_predictions_bin, average='weighted')  
-        average_precision = average_precision_score(all_targets, all_predictions, average='weighted')  
-        roc_auc = roc_auc_score(all_targets, all_predictions, average='weighted')  
+
+        f1 = f1_score(all_targets, all_predictions_bin, average='macro', zero_division=1)  
+        f2 = fbeta_score(all_targets, all_predictions_bin, beta=2, average='macro', zero_division=1)  
+
+        logger.info(f'Validation - F1 Score: {f1:.4f}, F2 Score: {f2:.4f}')  
         
-        print(f"F1 Score: {f1}")  
-        print(f"Average Precision: {average_precision}")  
-        print(f"ROC-AUC: {roc_auc}")  
-        
-        return f1, average_precision, roc_auc  
+        return f1, f2  
 
     def save_model(self, path):  
         torch.save({  
@@ -129,44 +128,52 @@ class MultiLabelClassifier:
             'fc_state_dict': self.fc.state_dict(),  
             'optimizer_state_dict': self.optimizer.state_dict()  
         }, path)  
+        logger.info(f'模型已保存到 {path}')  
 
     def load_model(self, path, num_labels):  
-        checkpoint = torch.load(path)  
+        checkpoint = torch.load(path, map_location=self.device)  
         self.model.load_state_dict(checkpoint['model_state_dict'])  
-
+        
         self.fc = nn.Sequential(  
             nn.Linear(self.model.visual.output_dim, 512),  
+            nn.BatchNorm1d(512),  
             nn.ReLU(),  
-            nn.Linear(512, 256),  
-            nn.ReLU(),  
-            nn.Linear(256, num_labels)  
+            nn.Dropout(0.5),  
+            nn.Linear(512, num_labels)  
         ).to(self.device)  
         self.fc.load_state_dict(checkpoint['fc_state_dict'])  
-
-        # 重新初始化优化器  
+        
         self.optimizer = optim.AdamW(self.fc.parameters())  
         self.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])  
+        logger.info(f'模型已加载自 {path}')  
 
     def classify_images_from_folder(self, folder_path, output_csv):  
         self.fc.eval()  
-        image_files = [os.path.join(folder_path, f) for f in os.listdir(folder_path)  
-                       if os.path.isfile(os.path.join(folder_path, f))]  
+        valid_extensions = ('.png', '.jpg', '.jpeg', '.bmp', '.gif')  
         
         all_predictions = []  
         image_paths = []  
         
-        for image_path in image_files:  
-            image = Image.open(image_path).convert('RGB')  
-            image = self.preprocess_func(image).unsqueeze(0).to(self.device)  # 使用remoteclip的预处理并添加batch dimension  
+        for img_name in os.listdir(folder_path):  
+            img_path = os.path.join(folder_path, img_name)  
+            if not img_path.lower().endswith(valid_extensions):  
+                continue  
+            
+            try:  
+                image = Image.open(img_path).convert('RGB')  
+                image = self.preprocess_func(image).unsqueeze(0).to(self.device)  # 使用预处理函数  
+                
+                with torch.no_grad(), torch.cuda.amp.autocast():  
+                    features = self.get_image_features(image)  
+                    outputs = self.fc(features)  
+                    probs = outputs.sigmoid().cpu().numpy()  
+                
+                image_paths.append(img_path)  
+                all_predictions.append(probs[0])  
+            except Exception as e:  
+                logger.error(f"处理图像 {img_name} 时出错: {e}")  
 
-            with torch.no_grad(), torch.cuda.amp.autocast():  
-                features = self.get_image_features(image)  
-                outputs = self.fc(features)  
-                probs = outputs.sigmoid().cpu().numpy()  
-
-            image_paths.append(image_path)  
-            all_predictions.append(probs[0])  
-        
         df = pd.DataFrame(all_predictions, columns=[f'label{i}' for i in range(len(all_predictions[0]))])  
         df['image_path'] = image_paths  
-        df.to_csv(output_csv, index=False)
+        df.to_csv(output_csv, index=False)  
+        logger.info(f'预测结果已保存到 {output_csv}')  
