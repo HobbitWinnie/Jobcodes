@@ -87,7 +87,7 @@ class RemoteCLIPClassifierFC:
 
             avg_loss = total_loss / len(train_dataloader)  
             epoch_duration = time.time() - epoch_start_time  
-            logger.info(f'Epoch {epoch+1}/{num_epochs} , Loss: {avg_loss:.4f}, Duration: {epoch_duration:.2f}s')  
+            logger.info(f'Epoch {epoch+1}/{num_epochs}, Loss: {avg_loss:.4f}, Duration: {epoch_duration:.2f}s')  
 
             # Validate every 5 epochs if validation data is provided  
             if val_dataloader and (epoch + 1) % 5 == 0:  

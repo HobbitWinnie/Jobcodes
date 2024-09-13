@@ -92,8 +92,8 @@ class RemoteCLIPClassifierMLKNN:
         epoch_duration = end_time - start_time  # Calculate the duration 
         logger.info("RemoteCLIP_MLKNN evaluating completed. Time: {:.2f} seconds".format(epoch_duration))  
 
-        logger.info(f'F1 Score: {f1}')  
-        logger.info(f'F2 Score: {f2}')    
+        logger.info(f'F1 Score: {f1:.4f}')  
+        logger.info(f'F2 Score: {f2:.4f}')    
 
         return f1, f2
     

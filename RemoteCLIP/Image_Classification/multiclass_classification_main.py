@@ -63,18 +63,15 @@ if __name__ == "__main__":
 
     # 初始化模型  
     num_labels = 60
-    classifier = RemoteCLIPClassifierMLKNN(checkpoint_path, model_name)      
-    # classifier = RemoteCLIPClassifierRankSVM(checkpoint_path, model_name)  
-    # classifier = RemoteCLIPClassifierFC(checkpoint_path, num_labels, model_name)  
-    # classifier = RemoteCLIPClassifierFCTest(checkpoint_path, num_labels, model_name)   # Epoch 100: Loss: 0.0708, F1 Score: 0.8610, F2 Score: 0.8427
+    # classifier = RemoteCLIPClassifierMLKNN(checkpoint_path, model_name)                # F1 Score: 0.8576, F2 Score: 0.8551
+    classifier = RemoteCLIPClassifierRankSVM(checkpoint_path, model_name)  
+    # classifier = RemoteCLIPClassifierFC(checkpoint_path, num_labels, model_name)       # Epoch 100: F1 Score: 0.8610, F2 Score: 0.8427, Loss: 0.0708
 
 
     # 创建训练和测试数据集  
-    # train_dataset = MLRSNetDataset(train_data, classifier.preprocess_func)  
-
     augmentation_transforms = get_augmentation_transforms()
     preprocess_func= transforms.Compose([augmentation_transforms, classifier.preprocess_func])
-    train_dataset = MLRSNetDataset(train_data, classifier.preprocess_func)  
+    train_dataset = MLRSNetDataset(train_data, preprocess_func)  
     test_dataset = MLRSNetDataset(test_data, classifier.preprocess_func)  
 
     # 打印数据集的样本数量  
@@ -85,9 +82,8 @@ if __name__ == "__main__":
     test_loader  = DataLoader(test_dataset, batch_size=192, num_workers=42, shuffle=True)  
    
     # 训练模型   
-    classifier.fit_knn(train_loader)  
-    # classifier.train_model(train_loader)  
-
+    # classifier.fit_knn(train_loader)  
+    classifier.train_model(train_loader)  
     classifier.evaluate(test_loader)
 
     # classifier.train_model(train_loader, test_loader, num_epochs=100)  
