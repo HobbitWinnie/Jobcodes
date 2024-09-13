@@ -6,7 +6,6 @@ from torch.utils.data import DataLoader
 sys.path.append('/home/nw/Codes/data_loader')  
 sys.path.append('/home/nw/Codes/RemoteCLIP/Image_Classification/src')  
 
-
 from WHURS19_DatasetLoader import WHURS19DatasetLoader  
 from MultiLabel_CSV_Loader import MultiLabelDataset
 
@@ -16,9 +15,6 @@ from remote_clip_rf import RemoteCLIPClassifierRF
 
 from remote_clip_zero_shot import RemoteCLIPZeroShotClassifier
 from remote_clip_few_shot import RemoteCLIPFewShotClassifier
-
-from remote_clip_ml_knn import RemoteCLIPClassifierMLKNN
-from remote_clip_rank_svm import RemoteCLIPClassifierRankSVM
 
 
 # 配置日志  
@@ -139,33 +135,8 @@ if __name__ == "__main__":
         
         classifier.load_support_dataset(support_dataset, num_shots=num_shots)
 
-
-    # multi-label knn
-    elif model_type == 'ml-knn':
-        classifier = RemoteCLIPClassifierMLKNN(
-            ckpt_path=ckpt_path, 
-            model_name=model_name
-            )         
-        train_dataloader = get_dataloaders(image_dir, label_file, classifier.preprocess_func)  
-        val_dataloader = get_dataloaders(image_dir, val_label_file, classifier.preprocess_func)  
-        
-        classifier.fit_knn(train_dataloader)
-        classifier.evaluate(val_dataloader)
-
-    elif model_type == 'rank_svm':
-        classifier = RemoteCLIPClassifierRankSVM(
-            ckpt_path=ckpt_path, 
-            model_name=model_name
-            )  
-        # load data from csv file
-        train_dataloader = get_dataloaders(image_dir, label_file, classifier.preprocess_func)  
-        val_dataloader = get_dataloaders(image_dir, val_label_file, classifier.preprocess_func)  
-        
-        classifier.train_model(train_dataloader)
-        classifier.evaluate(val_dataloader)
-
     else:  
-        raise ValueError("Unsupported model type. Choose 'knn', 'svm', or 'rf'.")  
+        raise ValueError("Unsupported model type. Choose 'knn', 'zero-shot', 'few-shot', 'svm', or 'rf'.")  
 
 
     # 调用分类器进行分类并保存top-3结果至csv文件

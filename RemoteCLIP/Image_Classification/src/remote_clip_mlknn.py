@@ -44,7 +44,7 @@ class RemoteCLIPClassifierMLKNN:
     def fit_knn(self, dataloader):  
         start_time = time.time()  # Start time for the epoch  
         current_time = datetime.now().strftime('%H:%M:%S')  
-        logger.info("RemoteCLIP_MLKNN training start. Time: {}".format(current_time))  
+        logger.info("start training RemoteCLIP_MLKNN. Time: {}".format(current_time))  
 
         train_image_features = []  
         train_labels = []  
@@ -69,7 +69,7 @@ class RemoteCLIPClassifierMLKNN:
     def evaluate(self, dataloader):  
         start_time = time.time()
         current_time = datetime.now().strftime('%H:%M:%S')  
-        logger.info("RemoteCLIP_MLKNN evaluating start. Time: {}".format(current_time))  
+        logger.info("start evaluating RemoteCLIP_MLKNN. Time: {}".format(current_time))  
 
         all_true_labels = []  
         all_predicted_labels = []  

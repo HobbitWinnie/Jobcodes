@@ -1,6 +1,4 @@
 import os  
-os.environ["CUDA_VISIBLE_DEVICES"] = "2"  
-
 import torch  
 import logging  
 import time  
@@ -10,9 +8,10 @@ import pandas as pd
 from torch import nn, optim  
 from datetime import datetime  
 from PIL import Image  
-from sklearn.metrics import f1_score, fbeta_score
-from torch.optim.lr_scheduler import StepLR  
-import torch.optim.lr_scheduler as lr_scheduler  
+from sklearn.metrics import f1_score, fbeta_score  
+from torch.optim.lr_scheduler import OneCycleLR  
+import torchvision.transforms as transforms  
+from torch.utils.data import DataLoader, Dataset  
 
 # Set up logging  
 logging.basicConfig(level=logging.INFO)  
@@ -25,19 +24,30 @@ class RemoteCLIPClassifierFC:
         self.device = device or ('cuda' if torch.cuda.is_available() else 'cpu')  
         
         # Load CLIP model and preprocessing function  
-        self.model, _, self.preprocess_func = open_clip.create_model_and_transforms(self.model_name)  
+        self.model, _, preprocess_func = open_clip.create_model_and_transforms(self.model_name)  
         ckpt = torch.load(ckpt_path, map_location='cpu')  
         self.model.load_state_dict(ckpt)  
         self.model = self.model.to(self.device).eval()  
         
-        # Initialize the final classifier layer  
-        self.fc = nn.Linear(self.model.visual.output_dim, num_labels).to(self.device)  
+        # Freeze all layers except the last few  
+        for param in self.model.parameters():  
+            param.requires_grad = False  
+        
+        # Initialize the final classifier layer with BatchNorm and Dropout  
+        self.fc = nn.Sequential(  
+            nn.Linear(self.model.visual.output_dim, 512),  
+            nn.BatchNorm1d(512),  
+            nn.ReLU(),  
+            nn.Dropout(0.5),  
+            nn.Linear(512, num_labels)  
+        ).to(self.device)  
+        
         self.criterion = nn.BCEWithLogitsLoss()  
-        self.optimizer = optim.Adam(self.fc.parameters(), lr=0.001)  
-        # self.scheduler = StepLR(self.optimizer, step_size=5, gamma=0.1)  
-        self.scheduler = lr_scheduler.ReduceLROnPlateau(self.optimizer, mode='min', factor=0.1, patience=5, verbose=True)  
+        self.optimizer = optim.AdamW(self.fc.parameters(), lr=0.001)  
+        self.scheduler = None  # Will be initialized in train_model  
 
-
+        # Set the preprocess function  
+        self.preprocess_func = preprocess_func  
 
     def get_image_features(self, images):  
         images = images.to(self.device)  
@@ -46,10 +56,13 @@ class RemoteCLIPClassifierFC:
         image_features /= image_features.norm(dim=-1, keepdim=True)  
         return image_features  
 
-    def train_model(self, train_dataloader, val_dataloader, num_epochs=50): 
+    def train_model(self, train_dataloader, val_dataloader, num_epochs=50):   
         current_time = datetime.now().strftime('%H:%M:%S')   
         logger.info("Start training RemoteCLIP_FC. Time: {}".format(current_time))  
         scaler = torch.cuda.amp.GradScaler()  
+        
+        # Initialize OneCycleLR scheduler  
+        self.scheduler = OneCycleLR(self.optimizer, max_lr=0.01, steps_per_epoch=len(train_dataloader), epochs=num_epochs)  
         
         self.fc.train()  
         for epoch in range(num_epochs):  
@@ -70,18 +83,20 @@ class RemoteCLIPClassifierFC:
                 scaler.update()  
                 
                 total_loss += loss.item()  
+                self.scheduler.step()  # Update learning rate  
 
-            avg_loss = total_loss / len(train_dataloader)
-            self.scheduler.step(avg_loss)              
-
+            avg_loss = total_loss / len(train_dataloader)  
             epoch_duration = time.time() - epoch_start_time  
-            logger.info(f'Epoch {epoch+1}/{num_epochs}, Loss: {avg_loss:.4f}, Duration: {epoch_duration:.2f}s')  
+            logger.info(f'Epoch {epoch+1}/{num_epochs} , Loss: {avg_loss:.4f}, Duration: {epoch_duration:.2f}s')  
 
             # Validate every 5 epochs if validation data is provided  
             if val_dataloader and (epoch + 1) % 5 == 0:  
                 self.evaluate_model(val_dataloader)  
                 self.fc.train()  
-    
+       
+        current_time = datetime.now().strftime('%H:%M:%S')   
+        logger.info("RemoteCLIP_FC training compeleted. Time: {}".format(current_time)) 
+
     def evaluate_model(self, dataloader):  
         self.fc.eval()  
         all_targets, all_predictions = [], []  
@@ -109,7 +124,7 @@ class RemoteCLIPClassifierFC:
 
         logger.info(f'Validation - F1 Score: {f1:.4f}, F2 Score: {f2:.4f}')  
         
-        return f1, f2
+        return f1, f2  
 
     def save_model(self, path):  
         torch.save({  
@@ -117,18 +132,24 @@ class RemoteCLIPClassifierFC:
             'fc_state_dict': self.fc.state_dict(),  
             'optimizer_state_dict': self.optimizer.state_dict()  
         }, path)  
-        logger.info(f'Model saved to {path}')  
+        logger.info(f'模型已保存到 {path}')  
 
     def load_model(self, path, num_labels):  
         checkpoint = torch.load(path, map_location=self.device)  
         self.model.load_state_dict(checkpoint['model_state_dict'])  
         
-        self.fc = nn.Linear(self.model.visual.output_dim, num_labels).to(self.device)  
+        self.fc = nn.Sequential(  
+            nn.Linear(self.model.visual.output_dim, 512),  
+            nn.BatchNorm1d(512),  
+            nn.ReLU(),  
+            nn.Dropout(0.5),  
+            nn.Linear(512, num_labels)  
+        ).to(self.device)  
         self.fc.load_state_dict(checkpoint['fc_state_dict'])  
         
         self.optimizer = optim.AdamW(self.fc.parameters())  
         self.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])  
-        logger.info(f'Model loaded from {path}')  
+        logger.info(f'模型已加载自 {path}')  
 
     def classify_images_from_folder(self, folder_path, output_csv):  
         self.fc.eval()  
@@ -144,7 +165,7 @@ class RemoteCLIPClassifierFC:
             
             try:  
                 image = Image.open(img_path).convert('RGB')  
-                image = self.preprocess_func(image).unsqueeze(0).to(self.device)  
+                image = self.preprocess_func(image).unsqueeze(0).to(self.device)  # 使用预处理函数  
                 
                 with torch.no_grad(), torch.cuda.amp.autocast():  
                     features = self.get_image_features(image)  
@@ -154,30 +175,9 @@ class RemoteCLIPClassifierFC:
                 image_paths.append(img_path)  
                 all_predictions.append(probs[0])  
             except Exception as e:  
-                logger.error(f"Error processing image {img_name}: {e}")  
+                logger.error(f"处理图像 {img_name} 时出错: {e}")  
 
         df = pd.DataFrame(all_predictions, columns=[f'label{i}' for i in range(len(all_predictions[0]))])  
         df['image_path'] = image_paths  
         df.to_csv(output_csv, index=False)  
-        logger.info(f'Predictions saved to {output_csv}')  
-        self.fc.eval()  
-        image_files = [os.path.join(folder_path, f) for f in os.listdir(folder_path) if os.path.isfile(os.path.join(folder_path, f))]  
-        
-        all_predictions = []  
-        image_paths = []  
-        
-        for image_path in image_files:  
-            image = Image.open(image_path).convert('RGB')  
-            image = self.preprocess_func(image).unsqueeze(0).to(self.device)  
-            
-            with torch.no_grad(), torch.cuda.amp.autocast():  
-                features = self.get_image_features(image)  
-                outputs = self.fc(features)  
-                probs = outputs.sigmoid().cpu().numpy()  
-            
-            image_paths.append(image_path)  
-            all_predictions.append(probs[0])  
-        
-        df = pd.DataFrame(all_predictions, columns=[f'label{i}' for i in range(len(all_predictions[0]))])  
-        df['image_path'] = image_paths  
-        df.to_csv(output_csv, index=False)
+        logger.info(f'预测结果已保存到 {output_csv}')  
