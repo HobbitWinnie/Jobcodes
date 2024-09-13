@@ -12,7 +12,7 @@ sys.path.append('/home/nw/Codes/RemoteCLIP/Image_Classification/src')
 from remote_clip_mlknn import RemoteCLIPClassifierMLKNN
 from remote_clip_ranksvm import RemoteCLIPClassifierRankSVM
 from remote_clip_mlfc import RemoteCLIPClassifierFC
-from remoteclip_multilabel import RemoteCLIPClassifierFCTest
+from remoteclip_mlfc_test import RemoteCLIPClassifierFCTest
 
 from MLRSNet_loader import MLRSNetDataset
 
@@ -66,15 +66,16 @@ if __name__ == "__main__":
     num_labels = 60
     # classifier = RemoteCLIPClassifierMLKNN(checkpoint_path, model_name)      
     # classifier = RemoteCLIPClassifierRankSVM(checkpoint_path, model_name)  
-    # classifier = RemoteCLIPClassifierFC(checkpoint_path, num_labels, model_name)  
-    classifier = RemoteCLIPClassifierFCTest(checkpoint_path, num_labels, model_name)  
+    classifier = RemoteCLIPClassifierFC(checkpoint_path, num_labels, model_name)  
+    # classifier = RemoteCLIPClassifierFCTest(checkpoint_path, num_labels, model_name)   # Epoch 100: Loss: 0.0708, F1 Score: 0.8610, F2 Score: 0.8427
 
 
     # 创建训练和测试数据集  
     # train_dataset = MLRSNetDataset(train_data, classifier.preprocess_func)  
 
     augmentation_transforms = get_augmentation_transforms()
-    train_dataset = MLRSNetDataset(train_data, preprocess_func=transforms.Compose([augmentation_transforms, classifier.preprocess_func]))  
+    preprocess_func= transforms.Compose([augmentation_transforms, classifier.preprocess_func])
+    train_dataset = MLRSNetDataset(train_data, preprocess_func)  
     test_dataset = MLRSNetDataset(test_data, classifier.preprocess_func)  
 
     # 打印数据集的样本数量  
