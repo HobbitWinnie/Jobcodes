@@ -64,7 +64,7 @@ if __name__ == "__main__":
     # 初始化模型  
     num_labels = 60
     # classifier = RemoteCLIPClassifierMLKNN(checkpoint_path, model_name)                # F1 Score: 0.8576, F2 Score: 0.8551
-    classifier = RemoteCLIPClassifierRankSVM(checkpoint_path, model_name)  
+    classifier = RemoteCLIPClassifierRankSVM(checkpoint_path, model_name)                # F1 Score：0.7228, F2 Score: 0.7149
     # classifier = RemoteCLIPClassifierFC(checkpoint_path, num_labels, model_name)       # Epoch 100: F1 Score: 0.8610, F2 Score: 0.8427, Loss: 0.0708
 
 

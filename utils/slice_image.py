@@ -35,6 +35,6 @@ def random_slice_image(input_dir, output_dir, slice_size=256, num_slices=16):
                 cropped_img.save(os.path.join(output_dir, cropped_filename))  
 
 # 示例用法  
-input_directory = '/home/Dataset/nw/Multilabel-Datasets/TIANJI_multilabel'  # 输入目录路径  
-output_directory = '/home/Dataset/nw/Multilabel-Datasets/TIANJI_slice_dataset'  # 输出目录路径  
-random_slice_image(input_directory, output_directory, slice_size=256, num_slices=16)
+input_directory = '/home/Dataset/nw/Multilabel-Datasets/TIANJI_multilabel/image_tianji'  # 输入目录路径  
+output_directory = '/home/Dataset/nw/Multilabel-Datasets/TIANJI_512_dataset/image'  # 输出目录路径  
+random_slice_image(input_directory, output_directory, slice_size=512, num_slices=6)
