@@ -1,8 +1,10 @@
+import os  
+os.environ["CUDA_VISIBLE_DEVICES"] = "3"  
+
 import torch  
 import open_clip  
 from PIL import Image  
 import pandas as pd  
-import os  
 from torch.utils.data import Dataset  
 
 

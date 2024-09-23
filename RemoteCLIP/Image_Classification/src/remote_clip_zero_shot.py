@@ -1,8 +1,11 @@
+import os  
+os.environ["CUDA_VISIBLE_DEVICES"] = "3"  
+
 import torch  
 import open_clip  
 from PIL import Image  
 import pandas as pd  
-import os  
+
 
 class RemoteCLIPZeroShotClassifier:  
     def __init__(self, ckpt_path, model_name='ViT-L-14', labels=None, device=None):  

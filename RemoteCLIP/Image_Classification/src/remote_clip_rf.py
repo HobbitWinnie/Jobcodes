@@ -1,10 +1,13 @@
+import os  
+os.environ["CUDA_VISIBLE_DEVICES"] = "3"  
+
 import torch  
 import numpy as np  
 from sklearn.ensemble import RandomForestClassifier  
 import open_clip  
 from PIL import Image  
 import pandas as pd  
-import os  
+
 
 class RemoteCLIPClassifierRF:  
     def __init__(self, ckpt_path, model_name='ViT-L-14', device=None):  

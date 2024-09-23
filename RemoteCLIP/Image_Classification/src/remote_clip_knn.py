@@ -1,10 +1,12 @@
+import os  
+os.environ["CUDA_VISIBLE_DEVICES"] = "3"  
+
 import torch  
 import numpy as np  
 from sklearn.neighbors import KNeighborsClassifier  
 import open_clip  
 from PIL import Image  
 import pandas as pd  
-import os  
 from torch.utils.data import DataLoader  
 
 class RemoteCLIPClassifierKNN:  

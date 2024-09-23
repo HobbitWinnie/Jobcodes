@@ -37,12 +37,12 @@ def load_MLRSNet_data(images_dir, labels_dir):
             for _, row in label_data.iterrows():  
                 image_name = row.iloc[0]  
                 labels = row.iloc[1:].values.astype('float')  
-                image_path = os.path.join(image_folder, image_name)  
+                image_path = os.path.join(images_dir, image_name)  
                 
                 if os.path.exists(image_path):  
                     data.append((image_path, labels))  
                 else:  
-                    print(f"Warning: Image {image_name} not found in {image_folder}")      
+                    print(f"Warning: Image {image_name} not found in {images_dir}")      
     return data  
 
 if __name__ == "__main__":  
@@ -51,7 +51,7 @@ if __name__ == "__main__":
     model_name = 'ViT-L-14'
 
     # MLRSNetDataset
-    DATASET_DIR = '/home/Dataset/nw/Multilabel-Datasets/MLRSNet_dataset'
+    DATASET_DIR = '/home/Dataset/nw/Multilabel-Datasets/TIANJI_512x512_dataset'
     images_dir = os.path.join(DATASET_DIR, 'Images')  
     labels_dir = os.path.join(DATASET_DIR, 'Labels')   
      
@@ -59,13 +59,13 @@ if __name__ == "__main__":
     data = load_MLRSNet_data(images_dir, labels_dir)  
 
     # 划分数据集  
-    train_data, test_data = train_test_split(data, test_size=0.8, random_state=42) 
+    train_data, test_data = train_test_split(data, test_size=0.6, random_state=42) 
 
     # 初始化模型  
-    num_labels = 60
+    num_labels = 17
     # classifier = RemoteCLIPClassifierMLKNN(checkpoint_path, model_name)                # F1 Score: 0.8576, F2 Score: 0.8551
-    classifier = RemoteCLIPClassifierRankSVM(checkpoint_path, model_name)                # F1 Score：0.7228, F2 Score: 0.7149
-    # classifier = RemoteCLIPClassifierFC(checkpoint_path, num_labels, model_name)       # Epoch 100: F1 Score: 0.8610, F2 Score: 0.8427, Loss: 0.0708
+    # classifier = RemoteCLIPClassifierRankSVM(checkpoint_path, model_name)                # F1 Score：0.7228, F2 Score: 0.7149
+    classifier = RemoteCLIPClassifierFC(checkpoint_path, num_labels, model_name)       # Epoch 100: F1 Score: 0.8610, F2 Score: 0.8427, Loss: 0.0708
 
 
     # 创建训练和测试数据集  
@@ -83,7 +83,7 @@ if __name__ == "__main__":
    
     # 训练模型   
     # classifier.fit_knn(train_loader)  
-    classifier.train_model(train_loader)  
-    classifier.evaluate(test_loader)
+    # classifier.train_model(train_loader)  
+    # classifier.evaluate(test_loader)
 
-    # classifier.train_model(train_loader, test_loader, num_epochs=100)  
+    classifier.train_model(train_loader, test_loader, num_epochs=100)  

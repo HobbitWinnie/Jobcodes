@@ -22,7 +22,7 @@ def generate_csv_from_image_folder(folder_path, output_csv_path):
                     seen_files.add(image_name)  
                     # Initialize label list with zeroes  
                     labels = [0] * len(all_labels)  
-                    data[image_name] = [image_path, labels]  
+                    data[image_name] = [image_name, labels]  
 
                 # Set the label for this directory  
                 data[image_name][1][label_dict[label]] = 1  
@@ -38,5 +38,5 @@ def generate_csv_from_image_folder(folder_path, output_csv_path):
 
 # Example usage  
 image_folder_path = '/home/Dataset/nw/GF2_Data/MultiLabel_dataset/data'  # The root folder containing subfolders of images  
-output_csv_path = '/home/Dataset/nw/GF2_Data/MultiLabel_dataset/csv_file/labels_d813.csv'  
+output_csv_path = '/home/Dataset/nw/GF2_Data/MultiLabel_dataset/csv_file/labels.csv'  
 generate_csv_from_image_folder(image_folder_path, output_csv_path)

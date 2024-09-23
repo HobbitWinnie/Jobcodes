@@ -121,8 +121,8 @@ def classify_images_in_folder(folder_path, classifier, labels, output_path=None,
 if __name__ == "__main__":  
     # 更新后的路径  
     ckpt_path = '/home/nw/Assets/RemoteCLIP/ckpt/RemoteCLIP-ViT-L-14.pt'  
-    query_folder_path = '/home/Dataset/nw/Multilabel-Datasets/TIANJI_slice_dataset/image'  
-    output_folder_path = '/home/Dataset/nw/Multilabel-Datasets/TIANJI_dataset_512x512'
+    query_folder_path = '/home/Dataset/nw/Multilabel-Datasets/TIANJI_512_dataset/image'  
+    output_folder_path = '/home/Dataset/nw/Multilabel-Datasets/TIANJI_512_dataset'
 
     try:  
         # 初始化分类器  

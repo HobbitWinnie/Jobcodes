@@ -5,11 +5,7 @@ model_name = 'ViT-L-14' # 'RN50' or 'ViT-B-32' or 'ViT-L-14'
 model, _, preprocess = open_clip.create_model_and_transforms(model_name)
 tokenizer = open_clip.get_tokenizer(model_name)
 
-<<<<<<< HEAD
 ckpt = torch.load(f"/home/nw/Codes/RemoteCLIP/checkpoints/RemoteCLIP-{model_name}.pt", map_location="cpu")
-=======
-ckpt = torch.load(f"/home/nw/Assets/RemoteCLIP/ckpt/RemoteCLIP-{model_name}.pt", map_location="cpu")
->>>>>>> 41bc9af (hi)
 message = model.load_state_dict(ckpt)
 print(message)
 
@@ -23,11 +19,8 @@ text_queries = [
     "a cute cat",
     ]
 text = tokenizer(text_queries)
-<<<<<<< HEAD
 image = preprocess(Image.open("/home/nw/Codes/RemoteCLIP/assets/airport.jpg")).unsqueeze(0)
-=======
 image = preprocess(Image.open("/home/nw/Assets/data/airport.jpg")).unsqueeze(0)
->>>>>>> 41bc9af (hi)
 
 with torch.no_grad(), torch.cuda.amp.autocast():
     image_features = model.encode_image(image.cuda())
