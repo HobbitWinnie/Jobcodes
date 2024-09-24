@@ -71,101 +71,99 @@ class RemoteSensingClassifier(nn.Module):
         # Move the model to the device
         self.to(self.device)  
 
-        # Enable Data Parallelism if multiple GPUs are available  
-        if torch.cuda.device_count() > 1:  
-            self = nn.DataParallel(self)  
-
     def forward(self, x):  
         x = self.conv_layers(x)  
         x = self.fc_layers(x)  
         return x  
 
-    def train_model(self, train_loader, val_loader, epochs=10, lr=0.0001):  
-        """Train the model."""  
-        criterion = nn.CrossEntropyLoss()  
-        optimizer = optim.Adam(self.parameters(), lr=lr, weight_decay=1e-4)  # L2 Regularization  
-        scaler = GradScaler()  
+def train_model(model, train_loader, val_loader, epochs=10, lr=0.0001):  
+    """Train the model."""      
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")  
 
-        logging.info("Starting model training...")  
-        
-        for epoch in range(epochs):  
-            self.train()  
-            total_loss = 0  
-            for images, labels in train_loader:  
-                images, labels = images.to(self.device), labels.to(self.device)  
-                
-                optimizer.zero_grad()                  
-                # Mixed Precision Training  
-                with autocast():  
-                    outputs = self(images)  
-                    loss = criterion(outputs, labels)  
+    criterion = nn.CrossEntropyLoss()  
+    optimizer = optim.Adam(model.parameters(), lr=lr, weight_decay=1e-4)  # L2 Regularization  
+    scaler = GradScaler()  
 
-                scaler.scale(loss).backward()  
-                scaler.step(optimizer)  
-                scaler.update()  
+    logging.info("Starting model training...")  
+    
+    for epoch in range(epochs):  
+        model.train()  
+        total_loss = 0  
+        for images, labels in train_loader:  
+            images, labels = images.to(device), labels.to(device)  
+            
+            optimizer.zero_grad()                  
+            # Mixed Precision Training  
+            with autocast():  
+                outputs = model(images)  
+                loss = criterion(outputs, labels)  
 
-                total_loss += loss.item()  
+            scaler.scale(loss).backward()  
+            scaler.step(optimizer)  
+            scaler.update()  
 
-            avg_loss = total_loss / len(train_loader)  
-            logging.info(f'Epoch {epoch+1}/{epochs}, Average training loss: {avg_loss:.4f}')  
+            total_loss += loss.item()  
 
-            if epoch % 10 == 0:  
-                self.validate_model(val_loader, criterion)  
+        avg_loss = total_loss / len(train_loader)  
+        logging.info(f'Epoch {epoch+1}/{epochs}, Average training loss: {avg_loss:.4f}')  
 
-        logging.info("Model training complete.")  
-        torch.save(self.state_dict(), 'model.pth')  
-        logging.info("Model saved to model.pth")  
+        if epoch % 10 == 0:  
+            validate_model(model, val_loader, criterion,device)  
 
-    def validate_model(self, val_loader, criterion):  
-        """Validate the model."""  
-        self.eval()  
-        val_loss = 0  
-        correct = 0  
-        with torch.no_grad():  
-            for images, labels in val_loader:  
-                images, labels = images.to(self.device), labels.to(self.device)  
-                outputs = self(images)  
-                val_loss += criterion(outputs, labels).item()  
-                pred = outputs.argmax(dim=1, keepdim=True)  
-                correct += pred.eq(labels.view_as(pred)).sum().item()  
+    logging.info("Model training complete.")  
+    torch.save(model.state_dict(), 'model.pth')  
+    logging.info("Model saved to model.pth")  
 
-        val_loss /= len(val_loader.dataset)  
-        accuracy = 100. * correct / len(val_loader.dataset)  
-        logging.info(f'Validation loss: {val_loss:.4f}, Accuracy: {accuracy:.2f}%')  
+def validate_model(model, val_loader, criterion, device):  
+    """Validate the model."""  
+    model.eval()  
+    val_loss = 0  
+    correct = 0  
+    with torch.no_grad():  
+        for images, labels in val_loader:  
+            images, labels = images.to(device), labels.to(device)  
+            outputs = model(images)  
+            val_loss += criterion(outputs, labels).item()  
+            pred = outputs.argmax(dim=1, keepdim=True)  
+            correct += pred.eq(labels.view_as(pred)).sum().item()  
 
-    def classify_image(self, image_path, output_path, patch_size=7):  
-        """Classify an image and save the result."""  
-        self.eval()  
-        logging.info("Starting image classification...")  
+    val_loss /= len(val_loader.dataset)  
+    accuracy = 100. * correct / len(val_loader.dataset)  
+    logging.info(f'Validation loss: {val_loss:.4f}, Accuracy: {accuracy:.2f}%')  
 
-        with rasterio.open(image_path) as src:  
-            image_to_classify = src.read()  
-            logging.info(f'Nodata value for classification image: {src.nodata}')  
+def classify_image(model, image_path, output_path, device, patch_size=7):  
+    """Classify an image and save the result."""  
+    model.eval()  
+    logging.info("Starting image classification...")  
 
-        _, height, width = image_to_classify.shape  
-        patches = extract_patches(image_to_classify, patch_size=patch_size)  
-        patches = patches[..., np.newaxis]  
-        patches = torch.tensor(patches, dtype=torch.float32).unsqueeze(1) / 255.0  
+    with rasterio.open(image_path) as src:  
+        image_to_classify = src.read()  
+        logging.info(f'Nodata value for classification image: {src.nodata}')  
 
-        predictions = []  
-        with torch.no_grad():  
-            for patch in patches:  
-                patch = patch.to(self.device)  
-                output = self(patch.unsqueeze(0))  
-                pred = output.argmax(dim=1, keepdim=True)  
-                predictions.append(pred.item())  
+    _, height, width = image_to_classify.shape  
+    patches = extract_patches(image_to_classify, patch_size=patch_size)  
+    patches = patches[..., np.newaxis]  
+    patches = torch.tensor(patches, dtype=torch.float32).unsqueeze(1) / 255.0  
 
-        result_image = np.array(predictions).reshape(height, width)  
-        logging.info("Image classification complete.")  
+    predictions = []  
+    with torch.no_grad():  
+        for patch in patches:  
+            patch = patch.to(device)  
+            output = model(patch.unsqueeze(0))  
+            pred = output.argmax(dim=1, keepdim=True)  
+            predictions.append(pred.item())  
 
-        with rasterio.open(image_path) as src:  
-            output_profile = src.profile  
-            output_profile.update(dtype=rasterio.uint8, count=1)  
+    result_image = np.array(predictions).reshape(height, width)  
+    logging.info("Image classification complete.")  
 
-        with rasterio.open(output_path, 'w', **output_profile) as dst:  
-            dst.write(result_image.astype(rasterio.uint8), 1)  
+    with rasterio.open(image_path) as src:  
+        output_profile = src.profile  
+        output_profile.update(dtype=rasterio.uint8, count=1)  
 
-        logging.info(f"Classified image saved to {output_path}")  
+    with rasterio.open(output_path, 'w', **output_profile) as dst:  
+        dst.write(result_image.astype(rasterio.uint8), 1)  
+
+    logging.info(f"Classified image saved to {output_path}")  
 
 def extract_patches(image, patch_size=7, stride=1):  
     """Extract all patches from an image."""  
@@ -235,14 +233,19 @@ def main(X_train_sample_path, y_train_sample_path, test_image_path, output_dir):
     
     batch_size, num_workers = get_optimal_batch_size_and_workers()  
     
-    train_loader = DataLoader(train_dataset, batch_size=128, num_workers=8, shuffle=True)  
-    val_loader = DataLoader(val_dataset, batch_size=128, num_workers=8, shuffle=True)  
+    train_loader = DataLoader(train_dataset, batch_size=128, num_workers=42, shuffle=True)  
+    val_loader = DataLoader(val_dataset, batch_size=128, num_workers=42, shuffle=True)  
 
     model = RemoteSensingClassifier(num_classes=10)  
-    model.train_model(train_loader, val_loader, epochs=10000)  
+    if torch.cuda.device_count() > 1:  
+        model = nn.DataParallel(model) 
     
+    train_model(model, train_loader, val_loader, epochs=10000)  
+    
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")  
+    model.to(device)  
     classified_result_path = os.path.join(output_dir, 'classified_result.tif')  
-    model.classify_image(test_image_path, classified_result_path)  
+    classify_image(model, test_image_path, classified_result_path, device)  
 
 def load_and_prepare_samples(X_train_sample_path, y_train_sample_path, train_img_path, label_img_path):  
     """Load or generate training samples."""  
