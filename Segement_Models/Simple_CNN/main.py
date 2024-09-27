@@ -7,7 +7,8 @@ from torch.utils.data import DataLoader
 from sklearn.model_selection import train_test_split  
 
 from data_utils import load_data, sample_dataset, load_dataset, save_dataset, RemoteSensingDataset
-from model import SimpleCNN  
+from model_CNN import SimpleCNN  
+from model_ResNet import ResNet18
 from train import train_model  
 
 
@@ -69,6 +70,9 @@ if __name__ == "__main__":
     y_path = os.path.join(SAMPLE_ROOT, 'Y_sample.npy')  
     save_path = '/home/nw/Codes/Segement_Models/model_save/model.pth'
 
+    test_img_path = os.path.join(IMAGE_ROOT, 'train_mask.tif')  
+    output_path = '/home/Dataset/nw/Segmentation/CpeosTest/result/classification_results.tif'  
+
     # Load data  
     image, labels, nodata_value = load_data(train_img_path, label_img_path)  
 
@@ -91,15 +95,12 @@ if __name__ == "__main__":
     val_loader = DataLoader(val_dataset, batch_size=64, shuffle=False)  
 
     # Initialize model  
-    num_classes = len(np.unique(labels))  
+    num_classes = 10 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')  
-    model = SimpleCNN(num_classes=num_classes).to(device)  
+    model = ResNet18(num_classes=num_classes).to(device)  
 
     # Train the model  
-    train_model(model, train_loader, val_loader, save_path, num_epochs=10)  
+    train_model(model, train_loader, val_loader, save_path, num_epochs=10000)  
 
     # Classify an image  
-    test_img_path = os.path.join(IMAGE_ROOT, 'train_mask.tif')  
-    output_path = '/home/Dataset/nw/Segmentation/CpeosTest/result/classification_results.tif'  
-
     classify_image(model, test_img_path,output_path, nodata_value)

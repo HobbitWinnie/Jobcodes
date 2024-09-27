@@ -1,6 +1,7 @@
 import rasterio  
 import os
 import numpy as np  
+import torch
 from torch.utils.data import Dataset  
 
 class RemoteSensingDataset(Dataset):  
@@ -17,8 +18,8 @@ class RemoteSensingDataset(Dataset):
         label = self.labels[idx]  
         if self.transform:  
             sample = self.transform(sample)  
-        return sample, label
-    
+        return torch.tensor(sample, dtype=torch.float32), torch.tensor(label, dtype=torch.long)  
+
 def load_data(image_path, label_path):  
     with rasterio.open(image_path) as src:  
         image = src.read()  # Shape [C, H, W]  

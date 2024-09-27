@@ -17,14 +17,26 @@ def train_model(model, train_loader, val_loader, save_path, num_epochs=10):
         running_loss = 0.0  
         for inputs, labels in train_loader:  
             inputs, labels = inputs.to(device), labels.to(device)  # 将输入和标签移动到设备  
+
+            # print(f"Input shape: {inputs.shape}, Labels shape: {labels.shape}, Label dtype: {labels.dtype}")  
+            # print(f"Inputs: {inputs.size()}, Labels: {labels.size()}")  
+
+            unique_labels = torch.unique(labels)  
+            # print("Unique label values:", unique_labels)  
+
+            # 检查是否有超出范围的标签值  
+            if unique_labels.max() >= 10 or unique_labels.min() < 0:  
+                raise ValueError("Label values are out of range!") 
+            
             optimizer.zero_grad()  
             outputs = model(inputs)  
+            # print(f"Outputs: {outputs.size()}")  
             loss = criterion(outputs, labels)  
+            # print(f"Loss: {loss.item()}")  
+
             loss.backward()  
             optimizer.step()  
             running_loss += loss.item()  
-
-        logging.info(f'Epoch {epoch+1}/{num_epochs}, Loss: {running_loss/len(train_loader):.4f}')  
 
         # Validation  
         model.eval()  
@@ -39,8 +51,9 @@ def train_model(model, train_loader, val_loader, save_path, num_epochs=10):
                 all_labels.extend(labels.cpu().numpy())  
 
         acc = accuracy_score(all_labels, all_preds)  
-        logging.info(f'Validation Accuracy: {acc * 100:.2f}%')  
-        logging.info(f'Classification Report:\n{classification_report(all_labels, all_preds)}')
+        
+        logging.info(f'Epoch {epoch+1}/{num_epochs}, Loss: {running_loss/len(train_loader):.4f}, Validation Accuracy: {acc * 100:.2f}%')  
+        # logging.info(f'Classification Report:\n{classification_report(all_labels, all_preds)}')
 
     # Save the trained model  
     torch.save(model.state_dict(), save_path)  

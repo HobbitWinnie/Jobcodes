@@ -1,7 +1,9 @@
 import torch.nn as nn  
+import torch  
+
 
 class SimpleCNN(nn.Module):  
-    def __init__(self, num_classes):  
+    def __init__(self, num_classes=10):  
         super(SimpleCNN, self).__init__()  
         self.conv_layers = nn.Sequential(  
             nn.Conv2d(4, 32, kernel_size=3, stride=1, padding=1),  
@@ -18,6 +20,8 @@ class SimpleCNN(nn.Module):
         )  
 
     def forward(self, x):  
+        if x.dtype != torch.float32:  
+            x = x.to(torch.float32)          
         x = self.conv_layers(x)  
         x = x.view(x.size(0), -1)  # Flatten  
         x = self.fc_layers(x)  
