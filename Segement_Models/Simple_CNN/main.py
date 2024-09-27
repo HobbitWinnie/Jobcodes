@@ -103,4 +103,4 @@ if __name__ == "__main__":
     train_model(model, train_loader, val_loader, save_path, num_epochs=10000)  
 
     # Classify an image  
-    classify_image(model, test_img_path,output_path, nodata_value)
+    classify_image(model, test_img_path, output_path, nodata_value)
