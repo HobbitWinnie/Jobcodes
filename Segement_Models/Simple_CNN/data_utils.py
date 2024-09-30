@@ -43,7 +43,7 @@ def prepare_dataset(image, patch_size=7):
     return np.array(X)
 
 
-def sample_dataset(image, labels, no_data_value, sample_size, patch_size=7,):  
+def sample_dataset(image, labels, no_data_value, sample_size, patch_size=7):  
     """  
     Prepare dataset by sampling patches from the image and avoiding nodata values.  
 
