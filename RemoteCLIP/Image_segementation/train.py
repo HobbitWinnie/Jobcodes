@@ -3,7 +3,7 @@ import logging
 import torch  
 import torch.nn as nn  
 import torch.optim as optim  
-from sklearn.metrics import accuracy_score, classification_report  
+from sklearn.metrics import accuracy_score  
 
 
 def train_model(model, train_loader, val_loader, num_classes, model_save_path, num_epochs=500, lr=1e-4):  
@@ -37,6 +37,7 @@ def train_model(model, train_loader, val_loader, num_classes, model_save_path, n
     # Save the trained model  
     torch.save(model.state_dict(), model_save_path)  
     logging.info(f'Model saved to {model_save_path}')  
+    
 
 def validate_model(model, val_loader, device):  
     model.eval()  

@@ -7,7 +7,7 @@ import numpy as np
 from torch.utils.data import DataLoader  
 from sklearn.model_selection import train_test_split  
 
-from model import load_clip_model, RemoteCLIPViTSegmentation  
+from model import load_clip_model, RemoteCLIPSegmentation  
 from data_utils import load_data, sample_dataset, load_dataset, save_dataset, SegmentationDataset
 from train import train_model
 
@@ -80,8 +80,7 @@ if __name__ == "__main__":
     y_path = os.path.join(SAMPLE_ROOT, 'Y_sample_11_50000.npy')  
     save_path = '/home/nw/Codes/Segement_Models/model_save/model.pth'
 
-    test_img_path_1 = os.path.join(IMAGE_ROOT, 'train_mask.tif')  
-    
+    test_img_path_1 = os.path.join(IMAGE_ROOT, 'train_mask.tif')      
     output_path_1 = '/home/Dataset/nw/Segmentation/CpeosTest/result/train_mask_Rere50_results.tif'  
 
     test_img_path_2 = os.path.join(IMAGE_ROOT, 'GF2_test_image.tif')  
@@ -90,12 +89,8 @@ if __name__ == "__main__":
     # Load trained CLIP model  
     clip_ckpt_path = '/home/nw/Assets/RemoteCLIP/ckpt/RemoteCLIP-RN50.pt'  
     model_name = "RN50"  
-    device = 'cuda' if torch.cuda.is_available() else 'cpu'  
-    clip_model, preprocess_func = load_clip_model(clip_ckpt_path, device=device)  
-
-    # Setup segmentation model  
     num_classes = 10  # Adjust based on your dataset  
-    seg_model = RemoteCLIPViTSegmentation(clip_model, num_classes).to(device)  
+    seg_model = RemoteCLIPSegmentation(clip_ckpt_path, num_classes, model_name)
 
     # Load data  
     train_loader, val_loader = prepare_data(X_path, y_path, train_img_path, label_img_path, 256)

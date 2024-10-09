@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn  
 import open_clip  
 
+
 def load_clip_model(ckpt_path, model_name='ViT-L-14', device='cpu'):  
     model, _, preprocess_func = open_clip.create_model_and_transforms(model_name)  
    
@@ -11,9 +12,15 @@ def load_clip_model(ckpt_path, model_name='ViT-L-14', device='cpu'):
     
     return model, preprocess_func  
 
-class RemoteCLIPViTSegmentation(nn.Module):  
-    def __init__(self, clip_model, num_classes):  
-        super(RemoteCLIPViTSegmentation, self).__init__()  
+
+class RemoteCLIPSegmentation(nn.Module):  
+    def __init__(self, clip_ckpt_path, num_classes, model_name):  
+        super(RemoteCLIPSegmentation, self).__init__()  
+
+        device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')  
+        clip_model, preprocess_func = load_clip_model(clip_ckpt_path, model_name, device)
+
+        self.preprocess_func = preprocess_func
         self.encoder = clip_model.visual  
         
         self.decoder = nn.Sequential(  
