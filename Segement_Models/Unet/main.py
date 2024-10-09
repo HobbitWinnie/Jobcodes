@@ -1,13 +1,13 @@
 import torch  
-import os
+import os  
 import numpy as np  
 import torch.nn as nn  
 import torch.optim as optim  
 import torchvision.transforms as transforms  
-from PIL import Image  
+import rasterio  
 from torch.utils.data import DataLoader  
 from unet import UNet  
-from dataset import LargeImageDataset  
+from dateset import LargeImageDataset  
 
 def train_model(model, train_loader, save_path, num_epochs=10, lr=1e-4):  
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')  
@@ -36,15 +36,16 @@ def train_model(model, train_loader, save_path, num_epochs=10, lr=1e-4):
         print(f'Epoch {epoch+1}/{num_epochs}, Training Loss: {running_loss/len(train_loader):.4f}')  
 
     torch.save(model.state_dict(), save_path)  
-    print('Model saved to {save_path}')  
+    print(f'Model saved to {save_path}')  
 
-def classify_image(image_path, model_path, patch_size=256, threshold=0.5):  
+def classify_image(image_path, model_path, output_path, patch_size=256, threshold=0.5):  
     """  
     Classify or segment an image using a trained U-Net model.  
 
     Parameters:  
     - image_path: str, path to the input image  
     - model_path: str, path to the trained model weights  
+    - output_path: str, path to save the segmented image  
     - patch_size: int, size of the patches to process (default: 256)  
     - threshold: float, threshold for binary classification (default: 0.5)  
 
@@ -58,12 +59,15 @@ def classify_image(image_path, model_path, patch_size=256, threshold=0.5):
     model.to(device)  
     model.eval()  
 
-    # Load and preprocess the image  
-    image = Image.open(image_path).convert('RGBA')  # 4通道影像  
-    image = np.array(image)  
+    # Load and preprocess the image using rasterio  
+    with rasterio.open(image_path) as src:  
+        image = src.read()  # Image shape: [C, H, W]  
+        meta = src.meta  
+
+    image = np.transpose(image, (1, 2, 0))  # Transform to shape [H, W, C]  
     h, w, _ = image.shape  
 
-    # Prepare the output image  
+    # Prepare the output image array  
     segmented_image = np.zeros((h, w), dtype=np.float32)  
 
     # Define transformation  
@@ -96,15 +100,23 @@ def classify_image(image_path, model_path, patch_size=256, threshold=0.5):
                 # Place the patch back into the output image  
                 segmented_image[y:y+patch_h, x:x+patch_w] = output[:patch_h, :patch_w]  
 
+    # Metadata adjustments  
+    meta.update(dtype=rasterio.float32, count=1)  
+
+    # Save the segmented image using rasterio  
+    with rasterio.open(output_path, 'w', **meta) as dst:  
+        dst.write(segmented_image, 1)  
+
+    print(f'Segmented image saved to {output_path}')  
     return segmented_image  
 
 def main():  
     # 数据集路径  
     IMAGE_ROOT = '/home/Dataset/nw/Segmentation/CpeosTest/images'  
     IMAGE_PATH = os.path.join(IMAGE_ROOT, 'GF2_train_image.tif')  
-    LABEL_PATH = os.path.join(IMAGE_ROOT, 'train_label.tif') 
+    LABEL_PATH = os.path.join(IMAGE_ROOT, 'train_label.tif')  
 
-    save_path = '/home/nw/Codes/Segement_Models/model_save/model_UNet.pth'
+    save_path = '/home/nw/Codes/Segement_Models/model_save/model_UNet.pth'  
     test_img_path = os.path.join(IMAGE_ROOT, 'train_mask.tif')  
     output_path = '/home/Dataset/nw/Segmentation/CpeosTest/result/train_mask_results.tif'  
     
@@ -124,11 +136,7 @@ def main():
     train_model(model, train_loader, save_path, num_epochs=500, lr=1e-4)  
 
     # 对新图像进行分类或分割  
-    segmented_image = classify_image(test_img_path, save_path, patch_size=256, threshold=0.5)  
-
-    # 保存分割结果  
-    Image.fromarray((segmented_image * 255).astype(np.uint8)).save(output_path)  
-    print(f'Segmented image saved to {output_path}')  
+    classify_image(test_img_path, save_path, output_path, patch_size=256, threshold=0.5)  
 
 if __name__ == "__main__":  
     main()

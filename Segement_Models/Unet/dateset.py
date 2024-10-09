@@ -1,41 +1,58 @@
 from torch.utils.data import Dataset  
-from PIL import Image  
 import numpy as np  
 import random  
+import rasterio  
+import torch  
+
+def load_data(image_path, label_path):  
+    with rasterio.open(image_path) as src:  
+        image = src.read()  # Shape [C, H, W]  
+    with rasterio.open(label_path) as src:  
+        labels = src.read(1)  # Shape [H, W]  
+
+    return image, labels  
 
 class LargeImageDataset(Dataset):  
     def __init__(self, image_path, label_path, patch_size=256, num_patches=1000, transform=None):  
-        self.image = Image.open(image_path)  # 读取 TIFF 格式的影像  
-        self.label = Image.open(label_path)  # 读取 TIFF 格式的标签  
+        self.image, self.label = load_data(image_path, label_path)  
+
         self.patch_size = patch_size  
         self.num_patches = num_patches  
         self.transform = transform  
 
-        self.image = np.array(self.image)  
+        # Ensure the image is in [H, W, C] format for easier patch extraction  
+        self.image = np.transpose(self.image, (1, 2, 0))  
         self.label = np.array(self.label)  
 
         self.h, self.w, _ = self.image.shape  
 
     def __len__(self):  
-        # 返回指定的补丁数量  
         return self.num_patches  
 
     def __getitem__(self, idx):  
-        # 随机选择补丁的起始位置  
+        # Ensure patch size is not larger than the image dimensions  
+        if self.h < self.patch_size or self.w < self.patch_size:  
+            raise ValueError(f"Patch size {self.patch_size} is too large for image of size {self.h}x{self.w}")  
+
+        # Randomly select the starting position of the patch  
         max_x = self.w - self.patch_size  
         max_y = self.h - self.patch_size  
         x = random.randint(0, max_x)  
         y = random.randint(0, max_y)  
 
-        # 提取补丁  
+        # Extract the patch  
         image_patch = self.image[y:y+self.patch_size, x:x+self.patch_size, :]  
         label_patch = self.label[y:y+self.patch_size, x:x+self.patch_size]  
 
-        if self.transform:  
-            image_patch = Image.fromarray(image_patch)  
-            label_patch = Image.fromarray(label_patch)  
+        # Ensure the type is float32  
+        image_patch = image_patch.astype(np.float32)  
+        label_patch = label_patch.astype(np.float32)  
 
+        # Apply transformations if any  
+        if self.transform:  
             image_patch = self.transform(image_patch)  
-            label_patch = self.transform(label_patch)  
+
+        # Convert labels to tensor  
+        label_patch = torch.tensor(label_patch, dtype=torch.float32)  
 
         return image_patch, label_patch
