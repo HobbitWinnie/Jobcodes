@@ -1,37 +1,33 @@
 import os  
 import torch  
+import torch.multiprocessing as mp  
+import torch.distributed as dist  
 import rasterio  
 import logging  
 import numpy as np  
 from torch.utils.data import DataLoader  
 from sklearn.model_selection import train_test_split  
-
-from data_utils import load_data, sample_dataset, load_dataset, save_dataset, RemoteSensingDataset
-from model_CNN import SimpleCNN  
-from model_ResNet18 import ResNet18
-from model_ResNet50 import ResNet50
-from train import train_model  
+from tqdm import tqdm  
+from data_utils import load_data, sample_dataset, load_dataset, save_dataset, RemoteSensingDataset  
+from model_ResNet50 import ResNet50  
 
 
-# Set up logging  
-logging.basicConfig(level=logging.INFO)  
+def setup(rank, world_size):  
+    os.environ['MASTER_ADDR'] = '10.200.56.146'  # Use your IP address here  
+    os.environ['MASTER_PORT'] = '36595'  # Use your selected port  
+    dist.init_process_group("nccl", rank=rank, world_size=world_size)  
 
-def classify_image(model_path, image_path, output_path, no_data_value, patch_size=7):  
-    """  
-    Classify an image using a trained model, avoiding nodata values.  
+def cleanup():  
+    dist.destroy_process_group()  
 
-    Parameters:  
-    - model: the trained PyTorch model  
-    - image_path: str, path to the input image  
-    - output_path: str, path to save the classified result  
-    - patch_size: int, size of the patch to extract (default: 7)  
-    - no_data_value: int, the value in labels that represents no data (default: -1)  
-    """  
-    # Load the trained model  
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')  
+def classify_image(rank, world_size, model_path, image_path, output_path, no_data_value, patch_size=7):  
+    setup(rank, world_size)  
+    device = torch.device(f'cuda:{rank}')  
+
+    # Load and setup model  
     model = ResNet50(num_classes=10).to(device)  
     model.load_state_dict(torch.load(model_path, map_location=device))  
-    model.to(device)  
+    model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[rank])  
     model.eval()  
 
     with rasterio.open(image_path) as src:  
@@ -44,7 +40,7 @@ def classify_image(model_path, image_path, output_path, no_data_value, patch_siz
     result_image = np.full((h, w), no_data_value, dtype=np.float32)  # Initialize with nodata  
 
     with torch.no_grad():  
-        for row in range(h):  
+        for row in tqdm(range(rank, h, world_size), desc=f"Processing rows (GPU {rank})"):  
             for col in range(w):  
                 if image[0, row, col] == no_data_value:  # Assuming the first channel indicates nodata  
                     continue  # Skip nodata pixels  
@@ -56,16 +52,14 @@ def classify_image(model_path, image_path, output_path, no_data_value, patch_siz
                 result_image[row, col] = pred  
 
     # Update profile for output  
-    profile.update(dtype=rasterio.float32, count=1)  
+    if rank == 0:  
+        profile.update(dtype=rasterio.float32, count=1)  
+        with rasterio.open(output_path, 'w', **profile) as dst:  
+            dst.write(result_image, 1)  
 
-    with rasterio.open(output_path, 'w', **profile) as dst:  
-        dst.write(result_image, 1)  
-        
-    print(f"Classification result saved to {output_path}")  
-
+    cleanup()  
 
 if __name__ == "__main__":  
-    
     IMAGE_ROOT = '/home/Dataset/nw/Segmentation/CpeosTest/images'  
     train_img_path = os.path.join(IMAGE_ROOT, 'GF2_train_image.tif')  
     label_img_path = os.path.join(IMAGE_ROOT, 'train_label.tif')  
@@ -73,14 +67,13 @@ if __name__ == "__main__":
     SAMPLE_ROOT = '/home/Dataset/nw/Segmentation/CpeosTest/samples'  
     X_path = os.path.join(SAMPLE_ROOT, 'X_sample_11_50000.npy')  
     y_path = os.path.join(SAMPLE_ROOT, 'Y_sample_11_50000.npy')  
-    model_path = '/home/nw/Codes/Segement_Models/model_save/model.pth'
+    model_path = '/home/nw/Codes/Segement_Models/model_save/model.pth'  
 
     test_img_path_1 = os.path.join(IMAGE_ROOT, 'train_mask.tif')  
     output_path_1 = '/home/Dataset/nw/Segmentation/CpeosTest/result/train_mask_results.tif'  
 
     test_img_path_2 = os.path.join(IMAGE_ROOT, 'GF2_test_image.tif')  
     output_path_2 = '/home/Dataset/nw/Segmentation/CpeosTest/result/GF2_test_image_results.tif'  
-
 
     # Load data  
     image, labels, nodata_value = load_data(train_img_path, label_img_path)  
@@ -90,7 +83,7 @@ if __name__ == "__main__":
     if X is None or y is None:  
         # Prepare dataset if not already saved  
         X, y = sample_dataset(image, labels, nodata_value, 50000, 11)  
-        save_dataset(X, y, X_path, y_path) 
+        save_dataset(X, y, X_path, y_path)  
 
     # Split data  
     X_train, X_val, y_train, y_val = train_test_split(X, y, test_size=0.5, random_state=42)  
@@ -103,14 +96,13 @@ if __name__ == "__main__":
     train_loader = DataLoader(train_dataset, batch_size=64, shuffle=True)  
     val_loader = DataLoader(val_dataset, batch_size=64, shuffle=False)  
 
-    # # Initialize model  
-    # num_classes = 10 
-    # device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')  
-    # model = ResNet50(num_classes=num_classes).to(device)  
-
-    # # Train the model  
-    # train_model(model, train_loader, val_loader, model_path, num_epochs=8000)  
-
-    # Classify an image  
-    classify_image(model_path, test_img_path_1, output_path_1, nodata_value)
-    classify_image(model_path, test_img_path_2, output_path_2, nodata_value)
+    # Classify images using multiple GPUs  
+    world_size = torch.cuda.device_count()  
+    mp.spawn(classify_image,  
+             args=(world_size, model_path, test_img_path_1, output_path_1, nodata_value),  
+             nprocs=world_size,  
+             join=True)  
+    mp.spawn(classify_image,  
+             args=(world_size, model_path, test_img_path_2, output_path_2, nodata_value),  
+             nprocs=world_size,  
+             join=True)
