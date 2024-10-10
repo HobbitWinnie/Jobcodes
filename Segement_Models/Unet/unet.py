@@ -16,10 +16,10 @@ class UNet(nn.Module):
         self.center = self.conv_block(512, 1024)  
 
         # 定义U-Net的解码器部分  
-        self.decoder4 = self.upconv_block(1024, 512)  
-        self.decoder3 = self.upconv_block(512, 256)  
-        self.decoder2 = self.upconv_block(256, 128)  
-        self.decoder1 = self.upconv_block(128, 64)  
+        self.decoder4 = self.upconv_block(1024, 512, 512)  
+        self.decoder3 = self.upconv_block(512, 256, 256)  
+        self.decoder2 = self.upconv_block(256, 128, 128)  
+        self.decoder1 = self.upconv_block(128, 64, 64)  
 
         # 最后的1x1卷积层，用于输出  
         self.final_conv = nn.Conv2d(64, out_channels, kernel_size=1)  
@@ -38,12 +38,12 @@ class UNet(nn.Module):
             nn.ReLU(inplace=True)  
         )  
 
-    def upconv_block(self, in_channels, out_channels):  
+    def upconv_block(self, in_channels, mid_channels, out_channels):  
         # 上采样然后卷积  
         return nn.Sequential(  
-            nn.ConvTranspose2d(in_channels, out_channels, kernel_size=2, stride=2),  
-            self.conv_block(out_channels, out_channels)  # 卷积给定的out_channels等于上采样后  
-        )
+            nn.ConvTranspose2d(in_channels, mid_channels, kernel_size=2, stride=2),  
+            self.conv_block(mid_channels + mid_channels, out_channels)  # 合并后的结果送入卷积块  
+        )  
 
     def forward(self, x):  
         # 编码器  
@@ -69,7 +69,7 @@ class UNet(nn.Module):
         dec1 = torch.cat((dec1, enc1), dim=1)  # 与enc1连接: [Batch, 128, H, W]  
 
         # 输出层  
-        return self.final_conv(dec1)  # 输出到所需通道
+        return self.final_conv(dec1)  # 输出到所需通道  
 
     def initialize_weights(self):  
         # 使用He初始化  
@@ -80,4 +80,4 @@ class UNet(nn.Module):
                     nn.init.constant_(m.bias, 0)  
             elif isinstance(m, nn.BatchNorm2d):  
                 nn.init.constant_(m.weight, 1)  
-                nn.init.constant_(m.bias, 0)  
+                nn.init.constant_(m.bias, 0)

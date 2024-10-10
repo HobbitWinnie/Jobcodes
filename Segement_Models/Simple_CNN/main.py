@@ -16,7 +16,7 @@ from train import train_model
 # Set up logging  
 logging.basicConfig(level=logging.INFO)  
 
-def classify_image(model, image_path, output_path, no_data_value, patch_size=7):  
+def classify_image(model_path, image_path, output_path, no_data_value, patch_size=7):  
     """  
     Classify an image using a trained model, avoiding nodata values.  
 
@@ -27,8 +27,12 @@ def classify_image(model, image_path, output_path, no_data_value, patch_size=7):
     - patch_size: int, size of the patch to extract (default: 7)  
     - no_data_value: int, the value in labels that represents no data (default: -1)  
     """  
+    # Load the trained model  
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')  
+    model = ResNet50(num_classes=10).to(device)  
+    model.load_state_dict(torch.load(model_path, map_location=device))  
+    model.to(device)  
     model.eval()  
-    device = next(model.parameters()).device  
 
     with rasterio.open(image_path) as src:  
         image = src.read()  # Shape [C, H, W]  
@@ -69,7 +73,7 @@ if __name__ == "__main__":
     SAMPLE_ROOT = '/home/Dataset/nw/Segmentation/CpeosTest/samples'  
     X_path = os.path.join(SAMPLE_ROOT, 'X_sample_11_50000.npy')  
     y_path = os.path.join(SAMPLE_ROOT, 'Y_sample_11_50000.npy')  
-    save_path = '/home/nw/Codes/Segement_Models/model_save/model.pth'
+    model_path = '/home/nw/Codes/Segement_Models/model_save/model.pth'
 
     test_img_path_1 = os.path.join(IMAGE_ROOT, 'train_mask.tif')  
     output_path_1 = '/home/Dataset/nw/Segmentation/CpeosTest/result/train_mask_results.tif'  
@@ -99,14 +103,14 @@ if __name__ == "__main__":
     train_loader = DataLoader(train_dataset, batch_size=64, shuffle=True)  
     val_loader = DataLoader(val_dataset, batch_size=64, shuffle=False)  
 
-    # Initialize model  
-    num_classes = 10 
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')  
-    model = ResNet50(num_classes=num_classes).to(device)  
+    # # Initialize model  
+    # num_classes = 10 
+    # device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')  
+    # model = ResNet50(num_classes=num_classes).to(device)  
 
-    # Train the model  
-    train_model(model, train_loader, val_loader, save_path, num_epochs=8000)  
+    # # Train the model  
+    # train_model(model, train_loader, val_loader, model_path, num_epochs=8000)  
 
     # Classify an image  
-    classify_image(model, test_img_path_1, output_path_1, nodata_value)
-    classify_image(model, test_img_path_2, output_path_2, nodata_value)
+    classify_image(model_path, test_img_path_1, output_path_1, nodata_value)
+    classify_image(model_path, test_img_path_2, output_path_2, nodata_value)
