@@ -17,18 +17,32 @@ def train_model(model, train_loader, save_path, num_epochs=10, lr=1e-4):
         model = nn.DataParallel(model)  
     model.to(device)  
 
-    criterion = nn.BCEWithLogitsLoss()  
+    criterion = nn.CrossEntropyLoss()  # 使用多分类的损失函数  
     optimizer = optim.Adam(model.parameters(), lr=lr)  
 
     for epoch in range(num_epochs):  
         model.train()  
         running_loss = 0.0  
         for images, masks in train_loader:  
+
+            # # 打印标签的形状  
+            # print("标签形状:", masks.shape)  
+            
+            # # 打印标签的唯一值，检查是否为二值化  
+            # unique_values = torch.unique(masks)  
+            # print("标签中的唯一值:", unique_values)  
+            
+            # # 打印一个标签的示例（假设批次大小大于1）  
+            # print("标签示例:")  
+            # print(masks[0, 0])  # 打印第一个样本的第一个通道  
+
             images, masks = images.to(device), masks.to(device)  
 
             optimizer.zero_grad()  
             outputs = model(images)  
-            loss = criterion(outputs, masks)  
+
+            # CrossEntropyLoss expects shape [Batch, num_classes, height, width]  
+            loss = criterion(outputs, masks.long())  
             loss.backward()  
             optimizer.step()  
             running_loss += loss.item()  
@@ -130,10 +144,11 @@ def main():
     train_loader = DataLoader(dataset, batch_size=192, num_workers=21, shuffle=True)  
 
     # 初始化模型  
-    model = UNet(in_channels=4, out_channels=1)  
+    num_classes=10  # for multi-class 
+    model = UNet(in_channels=4, out_channels=num_classes)  
 
     # 训练模型  
-    train_model(model, train_loader, save_path, num_epochs=500, lr=1e-4)  
+    train_model(model, train_loader, save_path, num_epochs=2000, lr=1e-4)  
 
     # 对新图像进行分类或分割  
     classify_image(test_img_path, save_path, output_path, patch_size=256, threshold=0.5)  

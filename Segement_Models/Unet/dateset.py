@@ -9,6 +9,11 @@ def load_data(image_path, label_path):
         image = src.read()  # Shape [C, H, W]  
     with rasterio.open(label_path) as src:  
         labels = src.read(1)  # Shape [H, W]  
+        nodata_value = src.nodata  
+
+    # Replace nodata values with 0  
+    if nodata_value is not None:  
+        labels = np.where(labels == nodata_value, 0, labels)
 
     return image, labels  
 

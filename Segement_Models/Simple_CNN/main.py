@@ -75,34 +75,34 @@ if __name__ == "__main__":
     test_img_path_2 = os.path.join(IMAGE_ROOT, 'GF2_test_image.tif')  
     output_path_2 = '/home/Dataset/nw/Segmentation/CpeosTest/result/GF2_test_image_results.tif'  
 
-    # Load data  
-    image, labels, nodata_value = load_data(train_img_path, label_img_path)  
+    # # Load data  
+    # image, labels, nodata_value = load_data(train_img_path, label_img_path)  
 
-    # Prepare dataset  
-    X, y = load_dataset(X_path, y_path)  
-    if X is None or y is None:  
-        # Prepare dataset if not already saved  
-        X, y = sample_dataset(image, labels, nodata_value, 50000, 11)  
-        save_dataset(X, y, X_path, y_path)  
+    # # Prepare dataset  
+    # X, y = load_dataset(X_path, y_path)  
+    # if X is None or y is None:  
+    #     # Prepare dataset if not already saved  
+    #     X, y = sample_dataset(image, labels, nodata_value, 50000, 11)  
+    #     save_dataset(X, y, X_path, y_path)  
 
-    # Split data  
-    X_train, X_val, y_train, y_val = train_test_split(X, y, test_size=0.5, random_state=42)  
+    # # Split data  
+    # X_train, X_val, y_train, y_val = train_test_split(X, y, test_size=0.5, random_state=42)  
 
-    # Create datasets  
-    train_dataset = RemoteSensingDataset(X_train, y_train)  
-    val_dataset = RemoteSensingDataset(X_val, y_val)  
+    # # Create datasets  
+    # train_dataset = RemoteSensingDataset(X_train, y_train)  
+    # val_dataset = RemoteSensingDataset(X_val, y_val)  
 
-    # Create data loaders  
-    train_loader = DataLoader(train_dataset, batch_size=64, shuffle=True)  
-    val_loader = DataLoader(val_dataset, batch_size=64, shuffle=False)  
+    # # Create data loaders  
+    # train_loader = DataLoader(train_dataset, batch_size=64, shuffle=True)  
+    # val_loader = DataLoader(val_dataset, batch_size=64, shuffle=False)  
 
     # Classify images using multiple GPUs  
     world_size = torch.cuda.device_count()  
+    # mp.spawn(classify_image,  
+    #          args=(world_size, model_path, test_img_path_1, output_path_1, nodata_value),  
+    #          nprocs=world_size,  
+    #          join=True)  
     mp.spawn(classify_image,  
-             args=(world_size, model_path, test_img_path_1, output_path_1, nodata_value),  
-             nprocs=world_size,  
-             join=True)  
-    mp.spawn(classify_image,  
-             args=(world_size, model_path, test_img_path_2, output_path_2, nodata_value),  
+             args=(world_size, model_path, test_img_path_2, output_path_2, 15),  
              nprocs=world_size,  
              join=True)
