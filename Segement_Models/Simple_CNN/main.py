@@ -42,10 +42,17 @@ def classify_image(rank, world_size, model_path, image_path, output_path, no_dat
     with torch.no_grad():  
         for row in tqdm(range(rank, h, world_size), desc=f"Processing rows (GPU {rank})"):  
             for col in range(w):  
-                patch = padded_image[:, row:row + patch_size, col:col + patch_size]  
+                row_start = row  
+                row_end = row + patch_size  
+                col_start = col  
+                col_end = col + patch_size  
+                
+                patch = padded_image[:, row_start:row_end, col_start:col_end]   
                 patch_tensor = torch.tensor(patch, dtype=torch.float32).unsqueeze(0).to(device)  
+
                 output = model(patch_tensor)  
                 pred = output.argmax(dim=1).item()  
+
                 result_image[row, col] = pred  
 
     # Update profile for output  
@@ -67,10 +74,10 @@ if __name__ == "__main__":
     model_path = '/home/nw/Codes/Segement_Models/model_save/model.pth'  
 
     test_img_path_1 = os.path.join(IMAGE_ROOT, 'train_mask.tif')  
-    output_path_1 = '/home/Dataset/nw/Segmentation/CpeosTest/result/train_mask_results.tif'  
+    output_path_1 = '/home/Dataset/nw/Segmentation/CpeosTest/result/train_mask_Res50_results.tif'  
 
     test_img_path_2 = os.path.join(IMAGE_ROOT, 'GF2_test_image.tif')  
-    output_path_2 = '/home/Dataset/nw/Segmentation/CpeosTest/result/GF2_test_image_results.tif'  
+    output_path_2 = '/home/Dataset/nw/Segmentation/CpeosTest/result/GF2_test_image_Res50_results.tif'  
 
     # # Load data  
     # image, labels, nodata_value = load_data(train_img_path, label_img_path)  
