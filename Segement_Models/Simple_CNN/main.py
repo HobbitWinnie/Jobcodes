@@ -42,9 +42,6 @@ def classify_image(rank, world_size, model_path, image_path, output_path, no_dat
     with torch.no_grad():  
         for row in tqdm(range(rank, h, world_size), desc=f"Processing rows (GPU {rank})"):  
             for col in range(w):  
-                if image[0, row, col] == no_data_value:  # Assuming the first channel indicates nodata  
-                    continue  # Skip nodata pixels  
-
                 patch = padded_image[:, row:row + patch_size, col:col + patch_size]  
                 patch_tensor = torch.tensor(patch, dtype=torch.float32).unsqueeze(0).to(device)  
                 output = model(patch_tensor)  
