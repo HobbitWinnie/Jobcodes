@@ -44,20 +44,6 @@ def prepare_dataset(image, patch_size=7):
 
 
 def sample_dataset(image, labels, no_data_value, sample_size, patch_size=7):  
-    """  
-    Prepare dataset by sampling patches from the image and avoiding nodata values.  
-
-    Parameters:  
-    - image: np.ndarray, the image data  
-    - labels: np.ndarray, the label data  
-    - patch_size: int, size of the patch to extract (default: 7)  
-    - no_data_value: the value in labels that represents no data (default: -1)  
-    - sample_fraction: float, fraction of the total data to sample (default: 0.1)  
-
-    Returns:  
-    - X: np.ndarray, the sampled patches  
-    - y: np.ndarray, the corresponding labels  
-    """  
     c, h, w = image.shape  
     pad_size = patch_size // 2  
     padded_image = np.pad(image, ((0, 0), (pad_size, pad_size), (pad_size, pad_size)), mode='edge')  
