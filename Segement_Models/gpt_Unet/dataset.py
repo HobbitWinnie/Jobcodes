@@ -15,19 +15,28 @@ def split_image_into_patches(image, patch_size=256, overlap=128):
 
 def reconstruct_image_from_patches(patches, image_shape, patch_size=256, overlap=128):  
     C, H, W = image_shape  
-    reconstructed_image = np.zeros((C, H, W), dtype=np.float32)  
-    patch_count = np.zeros((C, H, W), dtype=np.float32)  
+    reconstructed_image = np.zeros((H, W), dtype=np.int32)  
+    patch_count = np.zeros((H, W), dtype=np.int32)  
 
     step = patch_size - overlap  
     patch_idx = 0  
     for i in range(0, H - patch_size + 1, step):  
         for j in range(0, W - patch_size + 1, step):  
-            reconstructed_image[:, i:i + patch_size, j:j + patch_size] += patches[patch_idx]  
-            patch_count[:, i:i + patch_size, j:j + patch_size] += 1  
+            patch = patches[patch_idx]  
+            for x in range(patch_size):  
+                for y in range(patch_size):  
+                    pixel_value = patch[x, y]  
+                    # Update the reconstructed image with majority voting  
+                    if patch_count[i + x, j + y] == 0:  
+                        reconstructed_image[i + x, j + y] = pixel_value  
+                    else:  
+                        # If there's a tie, keep the existing value  
+                        if np.count_nonzero(reconstructed_image[i + x, j + y] == pixel_value) > patch_count[i + x, j + y] / 2:  
+                            reconstructed_image[i + x, j + y] = pixel_value  
+                    patch_count[i + x, j + y] += 1  
             patch_idx += 1  
 
-    patch_count = np.where(patch_count == 0, 1, patch_count)  
-    return reconstructed_image / patch_count  
+    return reconstructed_image  
 
 class RemoteSensingDataset(Dataset):  
     def __init__(self, image, labels, labels_nodata=0, patch_size=256, num_patches=1000):  

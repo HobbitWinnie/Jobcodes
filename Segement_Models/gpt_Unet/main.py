@@ -17,7 +17,10 @@ def load_data(image_path, label_path=None):
     with rasterio.open(image_path) as src:  
         image = src.read()  
         image_nodata = int(src.nodata)  
+        image_meta = src.meta  
         logging.info(f"Image nodata value: {image_nodata}")  
+        logging.info(f"Image profile: {image_meta}")  
+
     image_mask = (image[0] != image_nodata)   
 
     if label_path:  
@@ -34,7 +37,7 @@ def load_data(image_path, label_path=None):
         labels_nodata = 0  
 
     image = np.where(image_mask, image, 0)  
-    return image, labels, image_mask, labels_nodata  
+    return image, labels, image_mask, labels_nodata, image_meta
 
 def prepare_batch(batch, device):  
     img_patch, label_patch, mask_patch = batch  
@@ -95,11 +98,16 @@ def predict(model, image, mask, patch_size, overlap, device):
     logging.info("Prediction complete")  
     return reconstructed_prediction  
 
-def save_prediction(prediction, output_path):  
-    with rasterio.open(output_path, "w", driver="GTiff", height=prediction.shape[0],  
-                       width=prediction.shape[1], count=1, dtype=prediction.dtype) as dst:  
-        dst.write(prediction, 1)  
+def save_prediction(prediction, meta, output_path):  
+    # Update metadata for saving  
+    meta.update(dtype=rasterio.float32, count=1)  
+
+    # Save the segmented image  
+    with rasterio.open(output_path, 'w', **meta) as dst:  
+        dst.write(prediction, 1) 
+
     logging.info(f"Prediction saved to {output_path}")  
+
 
 def main():  
     IMAGE_ROOT = '/home/Dataset/nw/Segmentation/CpeosTest/images'  
@@ -111,11 +119,11 @@ def main():
     output_path = '/home/Dataset/nw/Segmentation/CpeosTest/result/train_mask_gptUnet_results.tif'  
 
     PATCH_SIZE = 256  
-    PATCH_NUMBER = 10000
+    PATCH_NUMBER = 1000
     OVERLAP = 128  
     BATCH_SIZE = 192 
-    EPOCHS = 300
-    LEARNING_RATE = 0.0001  
+    EPOCHS = 5
+    LEARNING_RATE = 0.001  
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")  
     
@@ -127,7 +135,7 @@ def main():
     model.to(device)   
 
     # Load training data  
-    image, labels, mask, labels_nodata = load_data(IMAGE_PATH, LABEL_PATH)  
+    image, labels, _ , labels_nodata,_ = load_data(IMAGE_PATH, LABEL_PATH)  
 
     # Create datasets and loaders  
     train_dataset = RemoteSensingDataset(image, labels, labels_nodata, patch_size=PATCH_SIZE, num_patches=PATCH_NUMBER)  
@@ -136,11 +144,12 @@ def main():
     train(model, train_loader, device, EPOCHS, LEARNING_RATE, save_path)  
 
     # Load test image and perform prediction  
-    test_image, _, test_mask, _ = load_data(test_img_path)  
+    test_image, _, test_mask, _ , image_profile = load_data(test_img_path)  
+    
     predicted_image = predict(model, test_image, test_mask, PATCH_SIZE, OVERLAP, device)  
 
     # Save the predicted image  
-    save_prediction(predicted_image, output_path)  
+    save_prediction(predicted_image, image_profile, output_path)  
 
 if __name__ == "__main__":  
     main()
