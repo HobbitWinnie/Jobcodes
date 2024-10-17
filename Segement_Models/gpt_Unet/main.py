@@ -43,7 +43,7 @@ def train(model, train_loader, device, epochs, learning_rate, save_path):
     model.to(device)  
     criterion = nn.CrossEntropyLoss(reduction='none')  
     optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)  
-    scheduler = StepLR(optimizer, step_size=50, gamma=0.1)  
+    scheduler = StepLR(optimizer, step_size=200, gamma=0.1)  
     scaler = GradScaler()  
 
     for epoch in range(epochs):  
@@ -61,6 +61,10 @@ def train(model, train_loader, device, epochs, learning_rate, save_path):
                 masked_loss = (loss * mask_patch.unsqueeze(1)).sum() / mask_patch.sum()  
 
             scaler.scale(masked_loss).backward()  
+            
+            # Clip gradients to prevent explosion  
+            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)  
+
             scaler.step(optimizer)  
             scaler.update()  
 
@@ -134,15 +138,7 @@ def main():
     # Load training data  
     image, labels, _, labels_nodata, _ = load_data(IMAGE_PATH, LABEL_PATH)  
 
-    # Create datasets and loaders  
-    train_transforms = transforms.Compose([  
-        transforms.ToPILImage(),  # Convert NumPy array to PIL Image  
-        transforms.RandomHorizontalFlip(),  
-        transforms.RandomVerticalFlip(),  
-        transforms.RandomRotation(10),  
-    ])  
-
-    train_dataset = RemoteSensingDataset(image, labels, labels_nodata, patch_size=PATCH_SIZE, num_patches=PATCH_NUMBER, transform=train_transforms)  
+    train_dataset = RemoteSensingDataset(image, labels, labels_nodata, patch_size=PATCH_SIZE, num_patches=PATCH_NUMBER)  
     train_loader = DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True, num_workers=16)  
 
     # Train the model  
