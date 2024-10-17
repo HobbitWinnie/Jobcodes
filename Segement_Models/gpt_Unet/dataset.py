@@ -110,7 +110,7 @@ class RemoteSensingDataset(Dataset):
         mask_patch = (label_patch != self.labels_nodata).astype(np.float32)  
 
         # 应用增强  
-        image_patch, label_patch, mask_patch = apply_augmentations(image_patch, label_patch, mask_patch)  
+        # image_patch, label_patch, mask_patch = apply_augmentations(image_patch, label_patch, mask_patch)  
 
         # 转换为张量  
         image_patch = torch.tensor(image_patch.transpose(2, 0, 1), dtype=torch.float32)  # [C, H, W]  
