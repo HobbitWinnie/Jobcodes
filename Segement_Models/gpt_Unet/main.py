@@ -21,8 +21,6 @@ def load_data(image_path, label_path=None):
         image = src.read()  
         image_nodata = int(src.nodata)  
         image_meta = src.meta  
-        logging.info(f"Image nodata value: {image_nodata}")  
-        # logging.info(f"Image profile: {image_meta}")  
 
     image_mask = (image[0] != image_nodata)  
 
@@ -31,7 +29,6 @@ def load_data(image_path, label_path=None):
         with rasterio.open(label_path) as src:  
             labels = src.read(1)  
             labels_nodata = int(src.nodata)  
-            logging.info(f"Labels nodata value: {labels_nodata}")  
 
         label_mask = (labels != labels_nodata)  
         labels = np.where(label_mask, labels, 0)  
@@ -41,15 +38,6 @@ def load_data(image_path, label_path=None):
 
     image = np.where(image_mask, image, 0)  
     return image, labels, image_mask, labels_nodata, image_meta  
-
-def prepare_batch(batch, device):  
-    img_patch, label_patch, mask_patch = batch  
-    return img_patch.to(device), label_patch.to(device), mask_patch.to(device)  
-
-def compute_masked_loss(outputs, targets, mask, criterion):  
-    loss = criterion(outputs, targets.long())  
-    masked_loss = loss * mask.unsqueeze(1)  
-    return masked_loss.sum() / mask.sum()  
 
 def train(model, train_loader, device, epochs, learning_rate, save_path):  
     model.to(device)  
@@ -63,18 +51,20 @@ def train(model, train_loader, device, epochs, learning_rate, save_path):
         total_loss = 0  
 
         for batch in train_loader:  
-            img_patch, label_patch, mask_patch = prepare_batch(batch, device)  
+            img_patch, label_patch, mask_patch = batch  
+            img_patch, label_patch, mask_patch = img_patch.to(device), label_patch.to(device), mask_patch.to(device)  
             optimizer.zero_grad()  
 
             with autocast():  
                 outputs = model(img_patch)  
-                loss = compute_masked_loss(outputs, label_patch, mask_patch, criterion)  
+                loss = criterion(outputs, label_patch.long())  
+                masked_loss = (loss * mask_patch.unsqueeze(1)).sum() / mask_patch.sum()  
 
-            scaler.scale(loss).backward()  
+            scaler.scale(masked_loss).backward()  
             scaler.step(optimizer)  
             scaler.update()  
 
-            total_loss += loss.item()  
+            total_loss += masked_loss.item()  
 
         average_loss = total_loss / len(train_loader)  
         logging.info(f"Epoch [{epoch + 1}/{epochs}], Average Loss: {average_loss:.4f}")  
@@ -84,54 +74,57 @@ def train(model, train_loader, device, epochs, learning_rate, save_path):
     torch.save(model.state_dict(), save_path)  
     logging.info(f"Model saved to {save_path}")  
 
-def predict(model, save_path, image, mask, patch_size, overlap, device):  
+def predict(model, save_path, test_image_paths, output_paths, patch_size, overlap, device):  
     model.load_state_dict(torch.load(save_path, map_location=device))  
     model.eval()  
-    logging.info("Starting prediction")  
-    patches = split_image_into_patches(image, patch_size, overlap)  
-    predictions = []  
 
-    with torch.no_grad():  
-        for i, patch in enumerate(patches):  
-            patch = torch.tensor(patch, dtype=torch.float32).unsqueeze(0).to(device)  
-            output = model(patch)  
-            pred = output.argmax(dim=1).squeeze().cpu().numpy()  
-            predictions.append(pred)  
-            logging.debug(f"Processed patch {i+1}/{len(patches)}")  
+    for test_image_path, output_path in zip(test_image_paths, output_paths):  
+        logging.info(f"Predicting for {test_image_path}")  
+        test_image, _, test_mask, _, image_profile = load_data(test_image_path)  
+        patches = split_image_into_patches(test_image, patch_size, overlap)  
+        predictions = []  
 
-    reconstructed_prediction = reconstruct_image_from_patches(predictions, image.shape, patch_size, overlap)  
-    reconstructed_prediction = np.where(mask, reconstructed_prediction, 0)  
-    logging.info("Prediction complete")  
-    return reconstructed_prediction  
+        with torch.no_grad():  
+            for patch in patches:  
+                patch = torch.tensor(patch, dtype=torch.float32).unsqueeze(0).to(device)  
+                output = model(patch)  
+                pred = output.argmax(dim=1).squeeze().cpu().numpy()  
+                predictions.append(pred)  
 
-def save_prediction(prediction, meta, output_path):  
-    meta.update(dtype=rasterio.float32, count=1)  
-    with rasterio.open(output_path, 'w', **meta) as dst:  
-        dst.write(prediction, 1)  
-    logging.info(f"Prediction saved to {output_path}")  
+        reconstructed_prediction = reconstruct_image_from_patches(predictions, test_image.shape, patch_size, overlap)  
+        reconstructed_prediction = np.where(test_mask, reconstructed_prediction, 0)  
+
+        # Save prediction  
+        image_profile.update(dtype=rasterio.float32, count=1)  
+        with rasterio.open(output_path, 'w', **image_profile) as dst:  
+            dst.write(reconstructed_prediction, 1)  
+        logging.info(f"Prediction saved to {output_path}")  
 
 def main():  
     IMAGE_ROOT = '/home/Dataset/nw/Segmentation/CpeosTest/images'  
     IMAGE_PATH = os.path.join(IMAGE_ROOT, 'GF2_train_image.tif')  
-    LABEL_PATH = os.path.join(IMAGE_ROOT, 'GF2_train_label.tif')  
+    LABEL_PATH = os.path.join(IMAGE_ROOT, 'train_label.tif')  
 
     save_path = '/home/nw/Codes/Segement_Models/model_save/model_gptUNet.pth'  
-    test_img_path = os.path.join(IMAGE_ROOT, 'train_mask.tif')  
-    output_path = '/home/Dataset/nw/Segmentation/CpeosTest/result/train_mask_gptUnet_results.tif'  
-
-    test_img_path_1 = os.path.join(IMAGE_ROOT, 'train_mask.tif')  
-    output_path_1 = '/home/Dataset/nw/Segmentation/CpeosTest/result/train_mask_gptUnet_results.tif'  
+    test_img_paths = [  
+        os.path.join(IMAGE_ROOT, 'train_mask.tif'),  
+        os.path.join(IMAGE_ROOT, 'GF2_test_image.tif')  
+    ]  
+    output_paths = [  
+        '/home/Dataset/nw/Segmentation/CpeosTest/result/train_mask_gptUnet_results.tif',  
+        '/home/Dataset/nw/Segmentation/CpeosTest/result/GF2_test_image_gptUnet_results.tif'  
+    ]  
 
     PATCH_SIZE = 256  
-    PATCH_NUMBER = 10000
-    OVERLAP = 32 
+    PATCH_NUMBER = 10000  
+    OVERLAP = 32  
     BATCH_SIZE = 192  # Adjust if needed based on GPU memory  
     EPOCHS = 1000  
     LEARNING_RATE = 0.001  
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")  
 
-    # Create and train the model  
+    # Initialize model  
     logging.info("Initializing UNet model")  
     model = UNet(in_channels=4, out_channels=10, dropout_rate=0.1)  
     if torch.cuda.device_count() > 1:  
@@ -141,27 +134,14 @@ def main():
     # Load training data  
     image, labels, _, labels_nodata, _ = load_data(IMAGE_PATH, LABEL_PATH)  
 
-    # Create datasets and loaders  
-    train_transforms = transforms.Compose([  
-        transforms.ToPILImage(),  # Convert NumPy array to PIL Image  
-        transforms.RandomHorizontalFlip(),  
-        transforms.RandomVerticalFlip(),  
-        transforms.RandomRotation(10),  
-    ])  
-
-    # Create datasets and loaders  
     train_dataset = RemoteSensingDataset(image, labels, labels_nodata, patch_size=PATCH_SIZE, num_patches=PATCH_NUMBER)  
-    train_loader = DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True, num_workers=21)  
+    train_loader = DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True, num_workers=16)  
 
+    # Train the model  
     train(model, train_loader, device, EPOCHS, LEARNING_RATE, save_path)  
 
-    # Load test image and perform prediction  
-    test_image, _, test_mask, _, image_profile = load_data(test_img_path)  
-
-    predicted_image = predict(model, save_path, test_image, test_mask, PATCH_SIZE, OVERLAP, device)  
-
-    # Save the predicted image  
-    save_prediction(predicted_image, image_profile, output_path)  
+    # Predict and save results  
+    predict(model, save_path, test_img_paths, output_paths, PATCH_SIZE, OVERLAP, device)  
 
 if __name__ == "__main__":  
     main()
