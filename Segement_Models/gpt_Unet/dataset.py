@@ -39,12 +39,13 @@ def reconstruct_image_from_patches(patches, image_shape, patch_size=256, overlap
     return reconstructed_image  
 
 class RemoteSensingDataset(Dataset):  
-    def __init__(self, image, labels, labels_nodata=0, patch_size=256, num_patches=1000):  
+    def __init__(self, image, labels, labels_nodata=0, patch_size=256, num_patches=1000, transform=None):  
         self.image = image  
         self.labels = labels  
         self.labels_nodata = labels_nodata  
         self.patch_size = patch_size  
         self.num_patches = num_patches  
+        self.transform = transform  
 
         # Ensure the image and labels have the correct dimensions  
         self.image = np.transpose(self.image, (1, 2, 0))  # [H, W, C]  
@@ -72,6 +73,10 @@ class RemoteSensingDataset(Dataset):
 
         # Generate mask based on labels  
         mask_patch = (label_patch != self.labels_nodata).astype(np.float32)  
+
+        # Apply transformations if any  
+        # if self.transform:  
+        #     image_patch = self.transform(image_patch)  
 
         # Convert to tensors  
         image_patch = torch.tensor(np.transpose(image_patch, (2, 0, 1)), dtype=torch.float32)  # [C, H, W]  
