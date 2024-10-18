@@ -1,15 +1,14 @@
 import os  
 import torch  
-from torch.utils.data import DataLoader  
-import rasterio  
-import numpy as np  
 import torch.nn as nn  
 import logging  
-from torch.optim.lr_scheduler import StepLR  
+from torch.utils.data import DataLoader  
+from torch.optim import Adam  
+from torch.optim.lr_scheduler import ReduceLROnPlateau  
 from torch.cuda.amp import GradScaler, autocast  
-import torchvision.transforms as transforms  
-
-from dataset import RemoteSensingDataset, reconstruct_image_from_patches, split_image_into_patches  
+import rasterio  
+import numpy as np  
+from dataset import RemoteSensingDataset, split_image_into_patches, reconstruct_image_from_patches  
 from model import UNet  
 
 # Configure logging  
@@ -47,18 +46,19 @@ def load_data(image_path, label_path=None):
 
     return image, labels, image_mask, labels_nodata, image_meta 
 
-def train(model, train_loader, device, epochs, learning_rate, save_path):  
+def train(model, train_loader, val_loader, device, epochs, learning_rate, save_path):  
     model.to(device)  
-    criterion = nn.CrossEntropyLoss(reduction='none')  
-    optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)  
+    criterion = nn.CrossEntropyLoss()  
+    optimizer = Adam(model.parameters(), lr=learning_rate)  
+    scheduler = ReduceLROnPlateau(optimizer, mode='min', factor=0.1, patience=10, verbose=True)  
     scaler = GradScaler()  
+    best_val_loss = float('inf')  
 
     for epoch in range(epochs):  
+        # Training phase  
         model.train()  
         total_loss = 0  
-
-        for batch in train_loader:  
-            img_patch, label_patch, mask_patch = batch  
+        for img_patch, label_patch, mask_patch in train_loader:  
             img_patch, label_patch, mask_patch = img_patch.to(device), label_patch.to(device), mask_patch.to(device)  
             optimizer.zero_grad()  
 
@@ -68,16 +68,41 @@ def train(model, train_loader, device, epochs, learning_rate, save_path):
                 masked_loss = (loss * mask_patch.unsqueeze(1)).sum() / mask_patch.sum()  
 
             scaler.scale(masked_loss).backward()  
+            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)  
             scaler.step(optimizer)  
             scaler.update()  
-
             total_loss += masked_loss.item()  
 
         average_loss = total_loss / len(train_loader)  
-        logging.info(f"Epoch [{epoch + 1}/{epochs}], Average Loss: {average_loss:.4f}")  
 
-    torch.save(model.state_dict(), save_path)  
-    logging.info(f"Model saved to {save_path}")  
+        # Validation phase  
+        val_loss = validate(model, val_loader, device, criterion)  
+        logging.info(f"Epoch [{epoch + 1}/{epochs}], Training Loss: {average_loss:.4f}, Validation Loss: {val_loss:.4f}")  
+
+        scheduler.step(val_loss)  
+
+        # Save the model if it has the best performance so far  
+        if val_loss < best_val_loss:  
+            best_val_loss = val_loss  
+            torch.save(model.state_dict(), save_path)  
+            logging.info(f"Saved best model with validation loss: {best_val_loss:.4f}")  
+
+def validate(model, val_loader, device, criterion):  
+    model.eval()  
+    total_val_loss = 0  
+    with torch.no_grad():  
+        for img_patch, label_patch, mask_patch in val_loader:  
+            img_patch, label_patch, mask_patch = img_patch.to(device), label_patch.to(device), mask_patch.to(device)  
+
+            with autocast():  
+                outputs = model(img_patch)  
+                loss = criterion(outputs, label_patch.long())  
+                masked_loss = (loss * mask_patch.unsqueeze(1)).sum() / mask_patch.sum()  
+
+            total_val_loss += masked_loss.item()  
+
+    average_val_loss = total_val_loss / len(val_loader)  
+    return average_val_loss  
 
 def predict(model, save_path, test_image_paths, output_paths, patch_size, overlap, device):  
     model.load_state_dict(torch.load(save_path, map_location=device))  
@@ -105,6 +130,7 @@ def predict(model, save_path, test_image_paths, output_paths, patch_size, overla
             dst.write(reconstructed_prediction, 1)  
         logging.info(f"Prediction saved to {output_path}")  
 
+
 def main():  
     IMAGE_ROOT = '/home/Dataset/nw/Segmentation/CpeosTest/images'  
     IMAGE_PATH = os.path.join(IMAGE_ROOT, 'GF2_train_image.tif')  
@@ -123,7 +149,7 @@ def main():
     PATCH_SIZE = 256  
     PATCH_NUMBER = 10000  
     OVERLAP = 32  
-    BATCH_SIZE = 128  # Adjust if needed based on GPU memory  
+    BATCH_SIZE = 128  # Adjusted for typical memory capacity  
     EPOCHS = 1000  
     LEARNING_RATE = 0.001  
 
@@ -140,10 +166,12 @@ def main():
     image, labels, _, labels_nodata, _ = load_data(IMAGE_PATH, LABEL_PATH)  
 
     train_dataset = RemoteSensingDataset(image, labels, labels_nodata, patch_size=PATCH_SIZE, num_patches=PATCH_NUMBER)  
-    train_loader = DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True, num_workers=16)  
+    val_dataset = RemoteSensingDataset(image, labels, labels_nodata, patch_size=PATCH_SIZE, num_patches=int(PATCH_NUMBER * 0.2))  # Assume some split  
+    train_loader = DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True, num_workers=8, pin_memory=True)  
+    val_loader = DataLoader(val_dataset, batch_size=BATCH_SIZE, shuffle=False, num_workers=4, pin_memory=True)  
 
     # Train the model  
-    train(model, train_loader, device, EPOCHS, LEARNING_RATE, save_path)  
+    train(model, train_loader, val_loader, device, EPOCHS, LEARNING_RATE, save_path)  
 
     # Predict and save results  
     predict(model, save_path, test_img_paths, output_paths, PATCH_SIZE, OVERLAP, device)  

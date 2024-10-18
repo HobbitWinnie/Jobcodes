@@ -2,6 +2,10 @@ import numpy as np
 import torch  
 from torch.utils.data import Dataset  
 import random  
+import torchvision.transforms as transforms  
+from torchvision.transforms import functional as F  
+from PIL import Image  
+
 
 def split_image_into_patches(image, patch_size=256, overlap=128):  
     patches = []  
@@ -70,12 +74,28 @@ class RemoteSensingDataset(Dataset):
         image_patch = self.image[y:y+self.patch_size, x:x+self.patch_size, :]  
         label_patch = self.labels[:, y:y+self.patch_size, x:x+self.patch_size]  
 
-        # Generate mask based on labels  
-        mask_patch = (label_patch != self.labels_nodata).astype(np.float32)  
+        # Convert to PIL Image for augmentation  
+        image_patch = Image.fromarray(image_patch)  
+        label_patch = Image.fromarray(label_patch.squeeze(), 'L')  
 
-        # Convert to tensors  
-        image_patch = torch.tensor(np.transpose(image_patch, (2, 0, 1)), dtype=torch.float32)  # [C, H, W]  
-        label_patch = torch.tensor(label_patch.squeeze(), dtype=torch.long)  # [H, W]  
-        mask_patch = torch.tensor(mask_patch.squeeze(), dtype=torch.float32)  # [H, W]  
+        # Apply augmentation  
+        if random.random() > 0.5:  
+            image_patch = F.hflip(image_patch)  
+            label_patch = F.hflip(label_patch)  
+
+        if random.random() > 0.5:  
+            image_patch = F.vflip(image_patch)  
+            label_patch = F.vflip(label_patch)  
+
+        angle = random.choice([0, 90, 180, 270])  
+        image_patch = F.rotate(image_patch, angle)  
+        label_patch = F.rotate(label_patch, angle)  
+
+        # Convert back to tensor  
+        image_patch = F.to_tensor(image_patch)  
+        label_patch = torch.tensor(np.array(label_patch), dtype=torch.long)  
+
+        # Generate mask_patch as a tensor with the same transform operations  
+        mask_patch = (label_patch != self.labels_nodata).float()  
 
         return image_patch, label_patch, mask_patch  
