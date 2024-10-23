@@ -2,9 +2,6 @@ import numpy as np
 import torch  
 from torch.utils.data import Dataset  
 import random  
-import torchvision.transforms as transforms  
-from torchvision.transforms import functional as F  
-from PIL import Image  
 
 
 def split_image_into_patches(image, patch_size=256, overlap=128):  
@@ -17,36 +14,36 @@ def split_image_into_patches(image, patch_size=256, overlap=128):
             patches.append(patch)  
     return patches  
 
-def reconstruct_image_from_patches(patches, image_shape, patch_size=256, overlap=128):  
-    C, H, W = image_shape  
-    reconstructed_image = np.zeros((H, W), dtype=np.int32)  
-    patch_count = np.zeros((H, W), dtype=np.int32)  
 
-    step = patch_size - overlap  
-    patch_idx = 0  
-    for i in range(0, H - patch_size + 1, step):  
-        for j in range(0, W - patch_size + 1, step):  
-            patch = patches[patch_idx]  
-            for x in range(patch_size):  
-                for y in range(patch_size):  
-                    pixel_value = patch[x, y]  
-                    # Update the reconstructed image with majority voting  
-                    if patch_count[i + x, j + y] == 0:  
-                        reconstructed_image[i + x, j + y] = pixel_value  
-                    else:  
-                        # If there's a tie, keep the existing value  
-                        if np.count_nonzero(reconstructed_image[i + x, j + y] == pixel_value) > patch_count[i + x, j + y] / 2:  
-                            reconstructed_image[i + x, j + y] = pixel_value  
-                    patch_count[i + x, j + y] += 1  
-            patch_idx += 1  
+def reconstruct_image_from_patches(predictions, original_shape, patch_size, overlap):  
+    """重建完整的预测图像，使用最高置信度策略处理重叠区域"""  
+    _, h, w = original_shape  # 假设 original_shape 是(C, H, W)  
+    reconstructed = np.zeros((h, w), dtype=np.uint8)  
+    confidence = np.zeros((h, w), dtype=np.float32)  
 
-    return reconstructed_image  
+    stride = patch_size - overlap  
+    for i, patch in enumerate(predictions):  
+        y = (i * stride) // w * stride  
+        x = (i * stride) % w  
+
+        y_end = min(y + patch_size, h)  
+        x_end = min(x + patch_size, w)  
+        patch_height, patch_width = y_end - y, x_end - x  
+        patch_confidence = np.max(patch[:, :patch_height, :patch_width], axis=0)  
+        patch_prediction = np.argmax(patch[:, :patch_height, :patch_width], axis=0)  
+
+        # 使用最高置信度策略更新预测  
+        update_mask = patch_confidence > confidence[y:y_end, x:x_end]  
+        confidence[y:y_end, x:x_end][update_mask] = patch_confidence[update_mask]  
+        reconstructed[y:y_end, x:x_end][update_mask] = patch_prediction[update_mask]  
+
+    return reconstructed  
+
 
 class RemoteSensingDataset(Dataset):  
-    def __init__(self, image, labels, labels_nodata=0, patch_size=256, num_patches=1000):  
+    def __init__(self, image, labels, patch_size=256, num_patches=1000):  
         self.image = image  
         self.labels = labels  
-        self.labels_nodata = labels_nodata  
         self.patch_size = patch_size  
         self.num_patches = num_patches  
 
@@ -74,28 +71,8 @@ class RemoteSensingDataset(Dataset):
         image_patch = self.image[y:y+self.patch_size, x:x+self.patch_size, :]  
         label_patch = self.labels[:, y:y+self.patch_size, x:x+self.patch_size]  
 
-        # Convert to PIL Image for augmentation  
-        image_patch = Image.fromarray(image_patch)  
-        label_patch = Image.fromarray(label_patch.squeeze(), 'L')  
+        # Convert to tensor  
+        image_patch = torch.from_numpy(image_patch.transpose((2, 0, 1))).float()  
+        label_patch = torch.from_numpy(label_patch.squeeze()).long()  
 
-        # Apply augmentation  
-        if random.random() > 0.5:  
-            image_patch = F.hflip(image_patch)  
-            label_patch = F.hflip(label_patch)  
-
-        if random.random() > 0.5:  
-            image_patch = F.vflip(image_patch)  
-            label_patch = F.vflip(label_patch)  
-
-        angle = random.choice([0, 90, 180, 270])  
-        image_patch = F.rotate(image_patch, angle)  
-        label_patch = F.rotate(label_patch, angle)  
-
-        # Convert back to tensor  
-        image_patch = F.to_tensor(image_patch)  
-        label_patch = torch.tensor(np.array(label_patch), dtype=torch.long)  
-
-        # Generate mask_patch as a tensor with the same transform operations  
-        mask_patch = (label_patch != self.labels_nodata).float()  
-
-        return image_patch, label_patch, mask_patch  
+        return image_patch, label_patch

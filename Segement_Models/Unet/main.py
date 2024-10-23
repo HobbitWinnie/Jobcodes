@@ -5,16 +5,37 @@ import torch.nn as nn
 import torch.optim as optim  
 import torchvision.transforms as transforms  
 import rasterio  
+import logging  
 from torch.utils.data import DataLoader  
-from unet import UNet   
+from unet import UNet  
 from dataset import LargeImageDataset  
+import tqdm
 
-def train_model(model, train_loader, save_path, num_epochs=10, lr=1e-4):  
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')  
+# 配置日志  
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')  
 
-    # Use DataParallel for multiple GPUs  
-    if torch.cuda.device_count() > 1:  
-        model = nn.DataParallel(model)  
+def load_data(image_path, label_path=None):  
+    logging.info(f"加载图像：{image_path}")  
+    with rasterio.open(image_path) as src:  
+        image = src.read()  # 形状 [C, H, W]  
+        image_nodata = src.nodata  
+        image_meta = src.meta  
+        image_mask = (image[0] != image_nodata)  
+        image = np.where(image_mask[np.newaxis, :, :], image,0)  
+
+    if label_path:  
+        logging.info(f"加载标签：{label_path}")  
+        with rasterio.open(label_path) as src:  
+            labels = src.read(1)  # 形状 [H, W]  
+            nodata_value = src.nodata# 将nodata值替换为0  
+            if nodata_value is not None:  
+                labels = np.where(labels == nodata_value, 0, labels)
+    else:  
+        labels = None  
+
+    return image, labels, image_mask, image_meta  
+
+def train_model(model, train_loader, device, save_path, num_epochs=10, lr=1e-4):  
     model.to(device)  
 
     criterion = nn.CrossEntropyLoss()  
@@ -24,93 +45,78 @@ def train_model(model, train_loader, save_path, num_epochs=10, lr=1e-4):
         model.train()  
         running_loss = 0.0  
         for images, masks in train_loader:  
-            # Ensure images and masks are on the correct device  
             images, masks = images.to(device), masks.to(device)  
 
             optimizer.zero_grad()  
             outputs = model(images)  
 
-            # Ensure masks are of type long for CrossEntropyLoss  
             loss = criterion(outputs, masks.long())  
             loss.backward()  
             optimizer.step()  
             running_loss += loss.item()  
 
-        print(f'Epoch {epoch+1}/{num_epochs}, Training Loss: {running_loss/len(train_loader):.4f}')  
+        logging.info(f'Epoch {epoch+1}/{num_epochs},训练损失: {running_loss/len(train_loader):.4f}')  
 
     torch.save(model.state_dict(), save_path)  
-    print(f'Model saved to {save_path}')  
+    logging.info(f'模型已保存到 {save_path}')  
 
-def classify_image(image_path, model_path, output_path, num_classes, patch_size=256):  
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')  
-    
-    # Initialize model with num_classes  
-    model = UNet(in_channels=4, out_channels=num_classes)  
-    
-    state_dict = torch.load(model_path, map_location=device)  
-    
-    # Manage state dict for DataParallel  
-    if any(k.startswith('module.') for k in state_dict.keys()):  
-        state_dict = {k.replace('module.', ''): v for k, v in state_dict.items()}  
-        
-    model.load_state_dict(state_dict)  
-
-    if torch.cuda.device_count() > 1:  
-        model = nn.DataParallel(model)  
-
-    model.to(device)  
+def classify_image(model, image, image_meta, model_path, output_path, device, patch_size=256, overlap=32):  
+    model.load_state_dict(torch.load(model_path, map_location=device))  
     model.eval()  
 
-    with rasterio.open(image_path) as src:  
-        image = src.read()  # Image shape: [C, H, W]  
-        meta = src.meta  
-
-    # Transpose image to shape [H, W, C] for processing  
     image = np.transpose(image, (1, 2, 0))  
-    h, w, _ = image.shape  
-
-    # Initialize output image  
-    segmented_image = np.zeros((h, w), dtype=np.float32)  
+    h, w, c = image.shape  
+    segmented_image = np.zeros((h, w), dtype=np.int32)  
+    confidence_map = np.zeros((h, w), dtype=np.float32)  
 
     transform = transforms.Compose([  
         transforms.ToTensor(),  
-        transforms.ConvertImageDtype(torch.float32)  # Ensure float32 for model input  
+        transforms.ConvertImageDtype(torch.float32)  
     ])  
 
     with torch.no_grad():  
-        for y in range(0, h, patch_size):  
-            for x in range(0, w, patch_size):  
-                # Extract patch  
+        for y in tqdm(range(0, h, patch_size - overlap), desc="处理行"):  
+            for x in range(0, w, patch_size - overlap):  
                 patch = image[y:min(y+patch_size, h), x:min(x+patch_size, w), :]  
                 patch_h, patch_w, _ = patch.shape  
 
-                # Pad patch if necessary  
                 if patch_h < patch_size or patch_w < patch_size:  
-                    padding = ((0, patch_size - patch_h), (0, patch_size - patch_w), (0, 0))  
-                    patch = np.pad(patch, padding, mode='constant')  
+                    padding = ((0, max(0, patch_size - patch_h)), (0, max(0, patch_size - patch_w)), (0, 0))  
+                    patch = np.pad(patch, padding, mode='reflect')  
 
-                # Transform and add batch dimension  
                 patch = transform(patch).unsqueeze(0).to(device)  
 
-                # Predict  
                 output = model(patch)  
-                output = torch.sigmoid(output).squeeze().cpu().numpy()  
+                probabilities = torch.softmax(output, dim=1).squeeze().cpu().numpy()  
+                labels = np.argmax(probabilities, axis=0)  
+                max_probs = np.max(probabilities, axis=0)  
 
-                # Convert multi-class output to single class per pixel  
-                output = np.argmax(output, axis=0).astype(np.int32) 
+                # 更新分割图像和置信度图  
+                for i in range(patch_h):  
+                    for j in range(patch_w):  
+                        y_pos, x_pos = y + i, x + j  
+                        if y_pos < h and x_pos < w:  
+                            if confidence_map[y_pos, x_pos] < max_probs[i, j]:  
+                                segmented_image[y_pos, x_pos] = labels[i, j]  
+                                confidence_map[y_pos, x_pos] = max_probs[i, j]  
 
-                # Place the patch back into the output image, limited by original patch size  
-                segmented_image[y:y+patch_h, x:x+patch_w] = output[:patch_h, :patch_w]  
+    image_meta.update(dtype=rasterio.int32, count=1)  
 
-    # Update metadata for saving  
-    meta.update(dtype=rasterio.float32, count=1)  
-
-    # Save the segmented image  
-    with rasterio.open(output_path, 'w', **meta) as dst:  
+    with rasterio.open(output_path, 'w', **image_meta) as dst:  
         dst.write(segmented_image, 1)  
 
-    print(f'Segmented image saved to {output_path}')  
-    return segmented_image  
+    logging.info(f'分割图像已保存至 {output_path}')  
+
+    # 保存置信度图  
+    confidence_path = output_path.replace('.tif', '_confidence.tif')  
+    confidence_meta = image_meta.copy()  
+    confidence_meta.update(dtype=rasterio.float32, count=1)  
+    with rasterio.open(confidence_path, 'w', **confidence_meta) as dst:  
+        dst.write(confidence_map, 1)  
+
+    logging.info(f'置信度图已保存至 {confidence_path}')  
+
+    return segmented_image, confidence_map 
 
 def main():  
     IMAGE_ROOT = '/home/Dataset/nw/Segmentation/CpeosTest/images'  
@@ -120,23 +126,34 @@ def main():
     save_path = '/home/nw/Codes/Segement_Models/model_save/model_UNet.pth'  
     test_img_path = os.path.join(IMAGE_ROOT, 'train_mask.tif')  
     output_path = '/home/Dataset/nw/Segmentation/CpeosTest/result/train_mask_Unet_results.tif'  
-    
-    transform = transforms.Compose([  
-        transforms.ToTensor(),  
-    ])  
 
-    patch_size=256
-    # dataset = LargeImageDataset(IMAGE_PATH, LABEL_PATH, patch_size=patch_size, num_patches=5000, transform=transform)  
-    # train_loader = DataLoader(dataset, batch_size=192, num_workers=4, shuffle=True)  
+    PATCH_SIZE = 256  
+    PATCH_NUMBER = 10000  
+    BATCH_SIZE = 128  
+    EPOCHS = 1000  
+    LEARNING_RATE = 0.001  
 
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")  
+    logging.info(f"使用设备: {device}")  
+
+    image, labels, image_mask, _ = load_data(IMAGE_PATH, LABEL_PATH)  
+
+    dataset = LargeImageDataset(image, labels, patch_size=PATCH_SIZE, num_patches=PATCH_NUMBER)  
+    train_loader = DataLoader(dataset, batch_size=BATCH_SIZE, num_workers=16, shuffle=True)  
+
+    logging.info("初始化UNet模型")  
     num_classes = 10  
-    # model = UNet(in_channels=4, out_channels=num_classes)  
+    model = UNet(in_channels=4, out_channels=num_classes)  
+    if torch.cuda.device_count() > 1:  
+        model = nn.DataParallel(model)  
+    model.to(device)  
 
-    # Train model  
-    # train_model(model, train_loader, save_path, num_epochs=10, lr=1e-4)  
+    # 训练模型  
+    train_model(model, train_loader, device, save_path, num_epochs=EPOCHS, lr=LEARNING_RATE)  
 
-    # Classify a new image  
-    classify_image(test_img_path, save_path, output_path, num_classes=num_classes, patch_size=patch_size)  
+    # 对新图像进行分类  
+    test_image, _, _, test_image_meta = load_data(test_img_path)  
+    classify_image(model, test_image, test_image_meta, save_path, output_path, device, patch_size=PATCH_SIZE)  
 
 if __name__ == "__main__":  
     main()

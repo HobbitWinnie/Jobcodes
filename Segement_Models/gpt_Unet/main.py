@@ -1,83 +1,101 @@
 import os  
 import torch  
-from torch.utils.data import DataLoader  
 import rasterio  
-import numpy as np  
 import torch.nn as nn  
 import logging  
-from torch.optim.lr_scheduler import StepLR  
+from torch.optim.lr_scheduler import ReduceLROnPlateau  
+from torch.utils.data import DataLoader  
 from torch.cuda.amp import GradScaler, autocast  
-import torchvision.transforms as transforms  
+from tqdm import tqdm  
+from torch.nn import functional as F
 
 from dataset import RemoteSensingDataset, reconstruct_image_from_patches, split_image_into_patches  
+from utils import load_data, mean_iou, multiclass_dice_coefficient
 from model import UNet  
 
 # Configure logging  
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')  
 
-def load_data(image_path, label_path=None):  
-    logging.info(f"Loading image from {image_path}")  
-    with rasterio.open(image_path) as src:  
-        image = src.read()  
-        image_nodata = int(src.nodata)  
-        image_meta = src.meta  
 
-    # Create a mask for valid image data  
-    image_mask = (image[0] != image_nodata)  
-
-    # Apply mask to image and normalize to uint8  
-    image = np.where(image_mask, image, 0)  
-    logging.info(f"image max value before normalize: {image.max()}, image min value before normalize: {image.min()}")  
-
-    image = ((image - image.min()) / (image.max() - image.min()) * 255).astype('uint8')  
-    logging.info(f"image max value after normalize: {image.max()}, image min value after normalize: {image.min()}")  
-
-    if label_path:  
-        logging.info(f"Loading labels from {label_path}")  
-        with rasterio.open(label_path) as src:  
-            labels = src.read(1)  
-            labels_nodata = int(src.nodata)  
-
-        # Create a mask for valid label data  
-        label_mask = (labels != labels_nodata)  
-        labels = np.where(label_mask, labels, 0)  
-    else:  
-        labels = None  
-        labels_nodata = 0  
-
-    return image, labels, image_mask, labels_nodata, image_meta 
-
-def train(model, train_loader, device, epochs, learning_rate, save_path):  
+def train(model, train_loader, val_loader, device, epochs, learning_rate, save_path):  
     model.to(device)  
-    criterion = nn.CrossEntropyLoss(reduction='none')  
+    criterion = nn.CrossEntropyLoss()  
     optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)  
     scaler = GradScaler()  
+    scheduler = ReduceLROnPlateau(optimizer,'max', patience=5, factor=0.5)  
+
+    best_val_dice = 0  
+    patience, patience_counter = 100, 0  
 
     for epoch in range(epochs):  
         model.train()  
-        total_loss = 0  
+        total_loss = total_dice = total_iou = 0  
 
         for batch in train_loader:  
-            img_patch, label_patch, mask_patch = batch  
-            img_patch, label_patch, mask_patch = img_patch.to(device), label_patch.to(device), mask_patch.to(device)  
+            img_patch, mask_patch = [b.to(device) for b in batch]  
             optimizer.zero_grad()  
 
             with autocast():  
                 outputs = model(img_patch)  
-                loss = criterion(outputs, label_patch.long())  
-                masked_loss = (loss * mask_patch.unsqueeze(1)).sum() / mask_patch.sum()  
+                loss = criterion(outputs, mask_patch.long())  
 
-            scaler.scale(masked_loss).backward()  
+            scaler.scale(loss).backward()  
             scaler.step(optimizer)  
             scaler.update()  
 
-            total_loss += masked_loss.item()  
+            total_loss += loss.item()  
+            pred = F.softmax(outputs, dim=1)  
+            total_dice += multiclass_dice_coefficient(pred, mask_patch).item()  
+            total_iou += mean_iou(pred, mask_patch).item()  
 
         average_loss = total_loss / len(train_loader)  
-        logging.info(f"Epoch [{epoch + 1}/{epochs}], Average Loss: {average_loss:.4f}")  
+        average_dice = total_dice / len(train_loader)  
+        average_iou = total_iou / len(train_loader)  
 
-    torch.save(model.state_dict(), save_path)  
-    logging.info(f"Model saved to {save_path}")  
+        val_loss, val_dice, val_iou = validate(model, val_loader, criterion, device)  
+
+        logging.info(f"Epoch [{epoch + 1}/{epochs}], Train Loss: {average_loss:.4f}, "  
+                     f"Train Dice: {average_dice:.4f}, Train IoU: {average_iou:.4f}, "  
+                     f"Val Loss: {val_loss:.4f}, Val Dice: {val_dice:.4f}, Val IoU: {val_iou:.4f}")  
+
+        scheduler.step(val_dice)  
+
+        if val_dice > best_val_dice:  
+            best_val_dice = val_dice  
+            torch.save(model.state_dict(), save_path)  
+            logging.info(f"Model saved to {save_path}")  
+            patience_counter = 0  
+        else:  
+            patience_counter += 1  
+
+        if patience_counter >= patience:  
+            logging.info(f"Early stopping triggered after {epoch + 1} epochs")  
+            break  
+
+def validate(model, val_loader, criterion, device):  
+    model.eval()  
+    total_loss = 0  
+    total_dice = 0  
+    total_iou = 0  
+    
+    with torch.no_grad():  
+        for batch in val_loader:  
+            img_patch, mask_patch = [b.to(device) for b in batch]  
+
+            with autocast():  
+                outputs = model(img_patch)  
+                loss = criterion(outputs, mask_patch.long())  
+                
+            total_loss += loss.item()  
+            pred = F.softmax(outputs, dim=1)  
+            total_dice += multiclass_dice_coefficient(pred, mask_patch).item()  
+            total_iou += mean_iou(pred, mask_patch).item()  
+
+    average_loss = total_loss / len(val_loader)  
+    average_dice = total_dice / len(val_loader)  
+    average_iou = total_iou / len(val_loader)  
+    return average_loss, average_dice, average_iou  
+
 
 def predict(model, save_path, test_image_paths, output_paths, patch_size, overlap, device):  
     model.load_state_dict(torch.load(save_path, map_location=device))  
@@ -85,25 +103,28 @@ def predict(model, save_path, test_image_paths, output_paths, patch_size, overla
 
     for test_image_path, output_path in zip(test_image_paths, output_paths):  
         logging.info(f"Predicting for {test_image_path}")  
-        test_image, _, test_mask, _, image_profile = load_data(test_image_path)  
+        test_image, _, image_profile = load_data(test_image_path)# image, labels, image_meta  
         patches = split_image_into_patches(test_image, patch_size, overlap)  
         predictions = []  
 
         with torch.no_grad():  
-            for patch in patches:  
+            for patch in tqdm(patches, desc="Processing patches"):  
                 patch = torch.tensor(patch, dtype=torch.float32).unsqueeze(0).to(device)  
                 output = model(patch)  
-                pred = output.argmax(dim=1).squeeze().cpu().numpy()  
+                pred = F.softmax(output, dim=1).squeeze().cpu().numpy()  
                 predictions.append(pred)  
 
         reconstructed_prediction = reconstruct_image_from_patches(predictions, test_image.shape, patch_size, overlap)  
-        reconstructed_prediction = np.where(test_mask, reconstructed_prediction, 0)  
 
-        # Save prediction  
-        image_profile.update(dtype=rasterio.float32, count=1)  
+        #更新图像配置  
+        image_profile.update(dtype=rasterio.uint8, count=1, nodata=0)  
+
         with rasterio.open(output_path, 'w', **image_profile) as dst:  
-            dst.write(reconstructed_prediction, 1)  
+            # 写入最终预测  
+            dst.write(reconstructed_prediction.astype(rasterio.uint8), 1)  
+
         logging.info(f"Prediction saved to {output_path}")  
+
 
 def main():  
     IMAGE_ROOT = '/home/Dataset/nw/Segmentation/CpeosTest/images'  
@@ -121,31 +142,36 @@ def main():
     ]  
 
     PATCH_SIZE = 256  
-    PATCH_NUMBER = 10000  
-    OVERLAP = 32  
-    BATCH_SIZE = 128  # Adjust if needed based on GPU memory  
+    PATCH_NUMBER = 5000  
+    OVERLAP = 64  
+    BATCH_SIZE = 128  
     EPOCHS = 1000  
     LEARNING_RATE = 0.001  
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")  
 
-    # Initialize model  
     logging.info("Initializing UNet model")  
     model = UNet(in_channels=4, out_channels=10, dropout_rate=0.1)  
     if torch.cuda.device_count() > 1:  
         model = nn.DataParallel(model)  
     model.to(device)  
 
-    # Load training data  
-    image, labels, _, labels_nodata, _ = load_data(IMAGE_PATH, LABEL_PATH)  
+    try:  
+        image, labels, _ = load_data(IMAGE_PATH, LABEL_PATH)  
+    except Exception as e:  
+        logging.error(f"Error loading data: {e}")  
+        return  
 
-    train_dataset = RemoteSensingDataset(image, labels, labels_nodata, patch_size=PATCH_SIZE, num_patches=PATCH_NUMBER)  
+    dataset = RemoteSensingDataset(image, labels, patch_size=PATCH_SIZE, num_patches=PATCH_NUMBER)  
+    train_size = int(0.8 * len(dataset))  
+    val_size = len(dataset) - train_size  
+    train_dataset, val_dataset = torch.utils.data.random_split(dataset, [train_size, val_size])  
+
     train_loader = DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True, num_workers=16)  
+    val_loader = DataLoader(val_dataset, batch_size=BATCH_SIZE, shuffle=False, num_workers=16)  
 
-    # Train the model  
-    train(model, train_loader, device, EPOCHS, LEARNING_RATE, save_path)  
+    train(model, train_loader, val_loader, device, EPOCHS, LEARNING_RATE, save_path)  
 
-    # Predict and save results  
     predict(model, save_path, test_img_paths, output_paths, PATCH_SIZE, OVERLAP, device)  
 
 if __name__ == "__main__":  

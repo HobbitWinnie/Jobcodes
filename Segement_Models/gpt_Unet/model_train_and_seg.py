@@ -50,7 +50,7 @@ def train(model, train_loader, val_loader, device, epochs, learning_rate, save_p
     model.to(device)  
     criterion = nn.CrossEntropyLoss()  
     optimizer = Adam(model.parameters(), lr=learning_rate)  
-    scheduler = ReduceLROnPlateau(optimizer, mode='min', factor=0.1, patience=10, verbose=True)  
+    scheduler = ReduceLROnPlateau(optimizer, mode='min', factor=0.1, patience=50, verbose=True)  
     scaler = GradScaler()  
     best_val_loss = float('inf')  
 
@@ -80,7 +80,6 @@ def train(model, train_loader, val_loader, device, epochs, learning_rate, save_p
         logging.info(f"Epoch [{epoch + 1}/{epochs}], Training Loss: {average_loss:.4f}, Validation Loss: {val_loss:.4f}")  
 
         scheduler.step(val_loss)  
-
         # Save the model if it has the best performance so far  
         if val_loss < best_val_loss:  
             best_val_loss = val_loss  
@@ -150,7 +149,7 @@ def main():
     PATCH_NUMBER = 10000  
     OVERLAP = 32  
     BATCH_SIZE = 128  # Adjusted for typical memory capacity  
-    EPOCHS = 1000  
+    EPOCHS = 300 
     LEARNING_RATE = 0.001  
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")  
@@ -166,7 +165,7 @@ def main():
     image, labels, _, labels_nodata, _ = load_data(IMAGE_PATH, LABEL_PATH)  
 
     train_dataset = RemoteSensingDataset(image, labels, labels_nodata, patch_size=PATCH_SIZE, num_patches=PATCH_NUMBER)  
-    val_dataset = RemoteSensingDataset(image, labels, labels_nodata, patch_size=PATCH_SIZE, num_patches=int(PATCH_NUMBER * 0.2))  # Assume some split  
+    val_dataset = RemoteSensingDataset(image, labels, labels_nodata, patch_size=PATCH_SIZE, num_patches=int(PATCH_NUMBER))  # Assume some split  
     train_loader = DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True, num_workers=8, pin_memory=True)  
     val_loader = DataLoader(val_dataset, batch_size=BATCH_SIZE, shuffle=False, num_workers=4, pin_memory=True)  
 
