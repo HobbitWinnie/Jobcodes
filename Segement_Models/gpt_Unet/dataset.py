@@ -39,6 +39,15 @@ def reconstruct_image_from_patches(predictions, original_shape, patch_size, over
 
     return reconstructed  
 
+def validate_labels(labels, num_classes=9):  
+    """验证标签值是否在有效范围内"""  
+    unique_labels = torch.unique(labels)  
+    min_label = unique_labels.min().item()  
+    max_label = unique_labels.max().item()  
+    if min_label < 0 or max_label >= num_classes:  
+        raise ValueError(f"Labels must be in range [0, {num_classes-1}], "  
+                        f"but got range [{min_label}, {max_label}]")
+
 
 class RemoteSensingDataset(Dataset):  
     def __init__(self, image, labels, patch_size=256, num_patches=1000):  
@@ -74,5 +83,7 @@ class RemoteSensingDataset(Dataset):
         # Convert to tensor  
         image_patch = torch.from_numpy(image_patch.transpose((2, 0, 1))).float()  
         label_patch = torch.from_numpy(label_patch.squeeze()).long()  
+
+        validate_labels(label_patch)  
 
         return image_patch, label_patch
