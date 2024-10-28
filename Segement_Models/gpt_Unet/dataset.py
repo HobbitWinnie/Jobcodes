@@ -2,42 +2,83 @@ import numpy as np
 import torch  
 from torch.utils.data import Dataset  
 import random  
+import logging
 
 
 def split_image_into_patches(image, patch_size=256, overlap=128):  
+    """  
+    将图像分割为patches  
+    
+    Args:  
+        image (np.ndarray): 输入图像，形状为 (C, H, W)  
+        patch_size (int): patch的大小  
+        overlap (int): 重叠区域的大小  
+    
+    Returns:  
+        patches (list): patch列表  
+        indices (list): 每个patch的位置信息，格式为 [(y, x), ...]  
+    """  
     patches = []  
+    indices = []  
     C, H, W = image.shape  
-    step = patch_size - overlap  
-    for i in range(0, H - patch_size + 1, step):  
-        for j in range(0, W - patch_size + 1, step):  
-            patch = image[:, i:i + patch_size, j:j + patch_size]  
+    stride = patch_size - overlap  
+    
+    for y in range(0, H - patch_size + 1, stride):  
+        for x in range(0, W - patch_size + 1, stride):  
+            patch = image[:, y:y + patch_size, x:x + patch_size]  
             patches.append(patch)  
-    return patches  
+            indices.append((y, x))  
+            
+    logging.info(f"Split image into {len(patches)} patches with size {patch_size} and overlap {overlap}")  
+    return patches, indices  
 
-
-def reconstruct_image_from_patches(predictions, original_shape, patch_size, overlap):  
-    """重建完整的预测图像，使用最高置信度策略处理重叠区域"""  
-    _, h, w = original_shape  # 假设 original_shape 是(C, H, W)  
+def reconstruct_image_from_patches(predictions, indices, original_shape, patch_size, overlap):  
+    """  
+    重建完整的预测图像，使用最高置信度策略处理重叠区域  
+    
+    Args:  
+        predictions (list): patch预测结果列表  
+        indices (list): 每个patch的位置信息  
+        original_shape (tuple): 原始图像形状 (C, H, W)  
+        patch_size (int): patch的大小  
+        overlap (int): 重叠区域的大小  
+    
+    Returns:  
+        np.ndarray: 重建后的完整图像  
+    """  
+    _, h, w = original_shape  
     reconstructed = np.zeros((h, w), dtype=np.uint8)  
     confidence = np.zeros((h, w), dtype=np.float32)  
-
-    stride = patch_size - overlap  
-    for i, patch in enumerate(predictions):  
-        y = (i * stride) // w * stride  
-        x = (i * stride) % w  
-
+    
+    for pred, (y, x) in zip(predictions, indices):  
+        # 计算实际的patch区域大小（处理边界情况）  
         y_end = min(y + patch_size, h)  
         x_end = min(x + patch_size, w)  
-        patch_height, patch_width = y_end - y, x_end - x  
-        patch_confidence = np.max(patch[:, :patch_height, :patch_width], axis=0)  
-        patch_prediction = np.argmax(patch[:, :patch_height, :patch_width], axis=0)  
-
+        patch_height = y_end - y  
+        patch_width = x_end - x  
+        
+        # 确保预测结果的形状正确  
+        if isinstance(pred, np.ndarray):  
+            if len(pred.shape) == 2:  
+                # 如果预测结果已经是类别标签，直接使用  
+                patch_prediction = pred[:patch_height, :patch_width]  
+                patch_confidence = np.ones((patch_height, patch_width), dtype=np.float32)  
+            else:  
+                # 如果预测结果是概率分布，计算最大概率和对应的类别  
+                patch_confidence = np.max(pred[:patch_height, :patch_width], axis=0)  
+                patch_prediction = np.argmax(pred[:patch_height, :patch_width], axis=0)  
+        else:  
+            logging.warning(f"Unexpected prediction type: {type(pred)}")  
+            continue  
+        
         # 使用最高置信度策略更新预测  
         update_mask = patch_confidence > confidence[y:y_end, x:x_end]  
         confidence[y:y_end, x:x_end][update_mask] = patch_confidence[update_mask]  
         reconstructed[y:y_end, x:x_end][update_mask] = patch_prediction[update_mask]  
+    
+    logging.info(f"Reconstructed image shape: {reconstructed.shape}")  
+    return reconstructed
 
-    return reconstructed  
 
 def validate_labels(labels, num_classes=9):  
     """验证标签值是否在有效范围内"""  

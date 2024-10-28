@@ -8,7 +8,6 @@ from torch.cuda.amp import GradScaler, autocast
 from torch.nn import functional as F
 
 from utils import (
-    setup_logging, 
     CombinedLoss, 
     EarlyStopping, 
     check_grad_norm,
@@ -18,6 +17,11 @@ from utils import (
 )
 from dataset import RemoteSensingDataset
 from model import UNet
+
+
+# Configure logging  
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')  
+
 
 def validate(model, val_loader, criterion, device):  
     """  
@@ -81,7 +85,6 @@ def validate(model, val_loader, criterion, device):
 
 def train_model(model, train_loader, val_loader, device, config):  
     """训练模型的主函数"""  
-    setup_logging(config['save_dir'])  
     logging.info(f"Starting training with config: {config}")  
     
     model = model.to(device)  
@@ -147,16 +150,7 @@ def train_model(model, train_loader, val_loader, device, config):
                 train_stats['total_loss'] += loss.item()  
                 train_stats['ce_loss'] += loss_dict['ce_loss']  
                 train_stats['dice_loss'] += loss_dict['dice_loss']  
-                
-                if batch_idx % config.get('log_interval', 10) == 0:  
-                    logging.info(  
-                        f"Epoch [{epoch + 1}/{config['epochs']}] "  
-                        f"Batch [{batch_idx}/{len(train_loader)}] "  
-                        f"Loss: {loss.item():.4f} "  
-                        f"CE: {loss_dict['ce_loss']:.4f} "  
-                        f"Dice: {loss_dict['dice_loss']:.4f}"  
-                    )  
-                
+
             except RuntimeError as e:  
                 logging.error(f"Error in training batch: {str(e)}")  
                 continue  
@@ -182,7 +176,7 @@ def train_model(model, train_loader, val_loader, device, config):
         )  
         
         # 保存最佳模型  
-        if val_stats['dice_score'] > best_val_dice:  
+        if (val_stats['dice_score'] > best_val_dice) and epoch>100:  
             best_val_dice = val_stats['dice_score']  
             best_epoch = epoch  
             save_path = os.path.join(config['save_dir'], 'best_model.pth')  
@@ -216,15 +210,15 @@ def main():
         },
         'dataset': {
             'patch_size': 256,
-            'patch_number': 5000,
+            'patch_number': 8000,
             'train_val_split': 0.8,
             'num_classes': 9  # 添加类别数量配置  
 
         },
         'training': {
-            'epochs': 1000,
-            'batch_size': 128,
-            'learning_rate': 5e-4,
+            'epochs': 2000,
+            'batch_size': 192,
+            'learning_rate': 5e-3,
             'min_lr': 1e-6,
             'weight_decay': 0.001,
             'scheduler_T0': 30,
@@ -238,7 +232,7 @@ def main():
         'model': {
             'in_channels': 4,
             'out_channels': 9,
-            'initial_features': 64,
+            'initial_features': 128,
             'dropout_rate': 0.2
         }
     }
