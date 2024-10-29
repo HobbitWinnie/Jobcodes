@@ -90,16 +90,20 @@ class Predictor:
                         with autocast():  
                             output = self.model(patch)  
                             pred = F.softmax(output, dim=1)  
-                            pred = torch.argmax(pred, dim=1).squeeze().cpu().numpy()  
+                            pred = pred.squeeze(0).cpu().numpy()  # 只移除batch维度  
                         predictions.append(pred)  
                     except Exception as e:  
                         logging.error(f"Error processing patch: {str(e)}")  
                         continue  
             
+            # 打印shape信息用于调试  
+            if predictions:  
+                logging.debug(f"Prediction shape: {predictions[0].shape}")  
+
             # 重建完整图像  
             reconstructed_prediction = reconstruct_image_from_patches(  
                 predictions,  
-                (test_image.shape[1], test_image.shape[2]),  
+                (test_image.shape[1], test_image.shape[2]),  # 只传入高度和宽度  
                 self.patch_size,  
                 self.overlap  
             )  

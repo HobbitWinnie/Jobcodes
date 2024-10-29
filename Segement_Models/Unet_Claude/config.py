@@ -39,8 +39,8 @@ class Config:
                     'test_image': 'GF2_test_image.tif'
                 },
                 'output': {
-                    'train_mask_result': 'train_mask_results.tif',
-                    'test_image_result': 'GF2_test_image_results.tif'
+                    'train_mask_result': 'train_mask_results_Unet_Claude.tif',
+                    'test_image_result': 'GF2_test_image_results_Unet_Claude.tif'
                 }
             },
             'dataset': {

@@ -109,63 +109,84 @@ def split_image_into_patches(image: np.ndarray,
     
     return patches
 
-def reconstruct_image_from_patches(predictions: List[np.ndarray], 
-                                 original_shape: Tuple[int, int, int], 
-                                 patch_size: int, 
-                                 overlap: int) -> np.ndarray:
-    """重建完整的预测图像，使用最高置信度策略处理重叠区域"""
-    _, h, w = original_shape
-    reconstructed = np.zeros((h, w), dtype=np.uint8)
-    confidence = np.zeros((h, w), dtype=np.float32)
+def reconstruct_image_from_patches(predictions, image_size, patch_size, overlap):  
+    """重建完整的预测图像"""  
+    h, w = image_size  
+    stride = patch_size - overlap  
     
-    stride = patch_size - overlap
-    idx = 0
+    # 获取类别数量  
+    num_classes = predictions[0].shape[0] if predictions else 1  
     
-    # 常规块的重建
-    for y in range(0, h - patch_size + 1, stride):
-        for x in range(0, w - patch_size + 1, stride):
-            patch_confidence = np.max(predictions[idx], axis=0)
-            patch_prediction = np.argmax(predictions[idx], axis=0)
+    # 初始化输出  
+    reconstructed = np.zeros((h, w), dtype=np.uint8)  
+    confidence = np.zeros((h, w), dtype=np.float32)  
+    
+    idx = 0  
+    # 处理常规块  
+    for y in range(0, h - patch_size + 1, stride):  
+        for x in range(0, w - patch_size + 1, stride):  
+            if idx >= len(predictions):  
+                break  
+                
+            pred = predictions[idx]  
+            # 确保pred是3维的 (num_classes, patch_size, patch_size)  
+            if pred.ndim == 1:  
+                pred = pred.reshape(num_classes, patch_size, patch_size)  
             
-            # 使用最高置信度策略更新预测
-            update_mask = patch_confidence > confidence[y:y+patch_size, x:x+patch_size]
-            confidence[y:y+patch_size, x:x+patch_size][update_mask] = patch_confidence[update_mask]
-            reconstructed[y:y+patch_size, x:x+patch_size][update_mask] = patch_prediction[update_mask]
-            idx += 1
-    
-    # 处理边缘
-    if h % stride != 0:
-        for x in range(0, w - patch_size + 1, stride):
-            y = h - patch_size
-            patch_confidence = np.max(predictions[idx], axis=0)
-            patch_prediction = np.argmax(predictions[idx], axis=0)
+            # 计算每个位置的最大概率和对应的类别  
+            patch_confidence = np.max(pred, axis=0)  
+            patch_prediction = np.argmax(pred, axis=0)  
             
-            update_mask = patch_confidence > confidence[y:h, x:x+patch_size]
-            confidence[y:h, x:x+patch_size][update_mask] = patch_confidence[update_mask]
-            reconstructed[y:h, x:x+patch_size][update_mask] = patch_prediction[update_mask]
-            idx += 1
-    
-    if w % stride != 0:
-        for y in range(0, h - patch_size + 1, stride):
-            x = w - patch_size
-            patch_confidence = np.max(predictions[idx], axis=0)
-            patch_prediction = np.argmax(predictions[idx], axis=0)
+            # 更新重建图像  
+            current_confidence = confidence[y:y+patch_size, x:x+patch_size]  
+            update_mask = patch_confidence > current_confidence  
             
-            update_mask = patch_confidence > confidence[y:y+patch_size, x:w]
-            confidence[y:y+patch_size, x:w][update_mask] = patch_confidence[update_mask]
-            reconstructed[y:y+patch_size, x:w][update_mask] = patch_prediction[update_mask]
-            idx += 1
+            confidence[y:y+patch_size, x:x+patch_size][update_mask] = patch_confidence[update_mask]  
+            reconstructed[y:y+patch_size, x:x+patch_size][update_mask] = patch_prediction[update_mask]  
+            idx += 1  
     
-    if h % stride != 0 and w % stride != 0:
-        y, x = h - patch_size, w - patch_size
-        patch_confidence = np.max(predictions[idx], axis=0)
-        patch_prediction = np.argmax(predictions[idx], axis=0)
-        
-        update_mask = patch_confidence > confidence[y:h, x:w]
-        confidence[y:h, x:w][update_mask] = patch_confidence[update_mask]
-        reconstructed[y:h, x:w][update_mask] = patch_prediction[update_mask]
+    # 处理边缘  
+    if h % stride != 0:  
+        y = h - patch_size  
+        for x in range(0, w - patch_size + 1, stride):  
+            if idx >= len(predictions):  
+                break  
+                
+            pred = predictions[idx]  
+            if pred.ndim == 1:  
+                pred = pred.reshape(num_classes, patch_size, patch_size)  
+            
+            patch_confidence = np.max(pred, axis=0)  
+            patch_prediction = np.argmax(pred, axis=0)  
+            
+            current_confidence = confidence[y:, x:x+patch_size]  
+            update_mask = patch_confidence[:h-y, :] > current_confidence  
+            
+            confidence[y:, x:x+patch_size][update_mask] = patch_confidence[:h-y, :][update_mask]  
+            reconstructed[y:, x:x+patch_size][update_mask] = patch_prediction[:h-y, :][update_mask]  
+            idx += 1  
     
-    return reconstructed
+    if w % stride != 0:  
+        x = w - patch_size  
+        for y in range(0, h - patch_size + 1, stride):  
+            if idx >= len(predictions):  
+                break  
+                
+            pred = predictions[idx]  
+            if pred.ndim == 1:  
+                pred = pred.reshape(num_classes, patch_size, patch_size)  
+            
+            patch_confidence = np.max(pred, axis=0)  
+            patch_prediction = np.argmax(pred, axis=0)  
+            
+            current_confidence = confidence[y:y+patch_size, x:]  
+            update_mask = patch_confidence[:, :w-x] > current_confidence  
+            
+            confidence[y:y+patch_size, x:][update_mask] = patch_confidence[:, :w-x][update_mask]  
+            reconstructed[y:y+patch_size, x:][update_mask] = patch_prediction[:, :w-x][update_mask]  
+            idx += 1  
+    
+    return reconstructed  
 
 def create_dataloaders(image: np.ndarray,
                       labels: np.ndarray,
