@@ -1,10 +1,8 @@
-import os
 import numpy as np
 import torch
 from torch.utils.data import Dataset, DataLoader, random_split
 import random
 from typing import Tuple, List, Optional, Union
-from pathlib import Path
 
 class RemoteSensingDataset(Dataset):
     """遥感影像数据集"""

@@ -6,6 +6,7 @@ import torch.nn.functional as F
 import rasterio  
 from torch.cuda.amp import autocast  
 from tqdm import tqdm  
+import numpy as np
 
 from config import get_config, setup_logging, setup_device  
 from model import UNet  
@@ -70,6 +71,18 @@ class Predictor:
                 normalize=True,  
             )  
             
+             # 获取nodata掩膜  
+            with rasterio.open(image_path) as src:  
+                nodata_value = src.nodata  
+                # 读取原始数据（未归一化）  
+                original_data = src.read()  
+                # 创建nodata掩膜  
+                if nodata_value is not None:  
+                    nodata_mask = (original_data[0] == nodata_value)  
+                else:  
+                    # 如果没有指定nodata值，假设所有值都是有效的  
+                    nodata_mask = np.zeros_like(original_data[0], dtype=bool)  
+
             # 分割图像为patches  
             patches = split_image_into_patches(  
                 test_image,  
@@ -108,6 +121,9 @@ class Predictor:
                 self.overlap  
             )  
             
+            # 应用nodata掩膜  
+            reconstructed_prediction[nodata_mask] = 0  
+
             # 保存预测结果  
             image_profile.update(  
                 dtype=rasterio.uint8,  
@@ -117,6 +133,7 @@ class Predictor:
             )  
             with rasterio.open(output_path, 'w', **image_profile) as dst:  
                 dst.write(reconstructed_prediction.astype(rasterio.uint8), 1)  
+            
             logging.info(f"Prediction saved to {output_path}")  
             
         except Exception as e:  
