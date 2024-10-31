@@ -1,237 +1,269 @@
 import os  
 import torch  
 import torch.nn as nn  
-import logging  
-from torch.optim.lr_scheduler import CosineAnnealingWarmRestarts  
-from torch.utils.data import DataLoader  
+import torch.optim as optim  
 from torch.cuda.amp import GradScaler, autocast  
-from torch.nn import functional as F  
-from tqdm import tqdm  
+import logging  
 import numpy as np  
+from torch.optim.lr_scheduler import CosineAnnealingWarmRestarts  
+from pathlib import Path  
+import time  
+from datetime import datetime  
 
-from config import get_config, setup_logging, setup_device  
-from utils import (  
-    RomoClipLoss,   
-    EarlyStopping,   
-    check_grad_norm,  
-    load_and_save_data,  
-    calculate_iou,  
-    multiclass_dice_coefficient  
-)  
+from utils import load_and_save_data, calculate_metrics  
 from dataset import create_dataloaders  
-from model import RomoClipUNet  
+from model import RemoteClipUNet, create_loss_fn  
+from config import get_config, setup_device, setup_logging  
 
-class CLIPFeatureLoss(nn.Module):  
-    """CLIP特征损失"""  
+class AverageMeter:  
+    """跟踪指标的平均值和当前值"""  
     def __init__(self):  
-        super().__init__()  
-        self.mse = nn.MSELoss()  
-        
-    def forward(self, pred_features, target_features):  
-        return self.mse(pred_features, target_features)  
+        self.val = 0  
+        self.avg = 0  
+        self.sum = 0  
+        self.count = 0  
 
-def setup_criterion(config):  
-    """初始化损失函数"""  
-    return {  
-        'ce': nn.CrossEntropyLoss(ignore_index=config['training'].get('ignore_index', 0)),  
-        'dice': CombinedLoss(  
-            weights=config['training'].get('loss_weights', [0.5, 0.5]),  
-            ignore_index=config['training'].get('ignore_index', 0)  
-        ),  
-        'feature': CLIPFeatureLoss()  
-    }  
-def validate(model, val_loader, criterion, device):  
-    """验证函数"""  
+    def reset(self):  
+        self.val = 0  
+        self.avg = 0  
+        self.sum = 0  
+        self.count = 0  
+
+    def update(self, val, n=1):  
+        self.val = val  
+        self.sum += val * n  
+        self.count += n  
+        self.avg = self.sum / self.count  
+
+@torch.no_grad()  
+def validate(model, val_loader, criterion, device, epoch, config):  
+    """验证模型"""  
     model.eval()  
-    total_loss = 0  
-    loss_components = {'ce_loss': 0, 'dice_loss': 0, 'feature_loss': 0}  
-    
-    with torch.no_grad():  
-        for batch in val_loader:  
-            images = batch['image'].to(device)  
-            masks = batch['mask'].to(device)  
-            clip_features = batch.get('clip_features')  
-            if clip_features is not None:  
-                clip_features = clip_features.to(device)  
-            
-            with autocast():  
-                outputs = model(images)  
-                loss, components = criterion(  
-                    outputs=outputs,  
-                    targets=masks,  
-                    clip_features=clip_features,  
-                    pred_features=outputs.get('features')  
-                )  
-            
-            total_loss += loss.item()  
-            for k, v in components.items():  
-                loss_components[k] += v  
-    
-    # 计算平均值  
-    num_batches = len(val_loader)  
-    return {  
-        'val_loss': total_loss / num_batches,  
-        **{k: v / num_batches for k, v in loss_components.items()}  
+    metrics = {  
+        'val_loss': AverageMeter(),  
+        'pixel_acc': AverageMeter(),  
+        'mean_iou': AverageMeter()  
     }  
+    
+    for images, masks in val_loader:  
+        images = images.to(device)  
+        masks = masks.to(device)  
+        
+        outputs = model(images)  
+        loss = criterion(outputs, masks)  
+        
+        batch_metrics = calculate_metrics(  
+            outputs['main'],   
+            masks,  
+            num_classes=config['dataset']['num_classes']  
+        )  
+        
+        metrics['val_loss'].update(loss['total'].item())  
+        metrics['pixel_acc'].update(batch_metrics['pixel_acc'])  
+        metrics['mean_iou'].update(batch_metrics['mean_iou'])  
+    
+    return {k: v.avg for k, v in metrics.items()}  
 
-def train_model(model, train_loader, val_loader, device, config):  
+def save_checkpoint(state, save_path, is_best=False):  
+    """保存检查点"""  
+    save_path = Path(save_path)  
+    save_path.parent.mkdir(parents=True, exist_ok=True)  
+    
+    # 保存最新检查点  
+    torch.save(state, save_path)  
+    
+    # 如果是最佳模型，复制一份  
+    if is_best:  
+        best_path = save_path.parent / 'model_best.pth'  
+        torch.save(state, best_path)  
+        logging.info(f"Saved best model with mIoU: {state['best_miou']:.4f}")  
+
+def load_checkpoint(model, optimizer, scheduler, checkpoint_path):  
+    """加载检查点"""  
+    if not os.path.exists(checkpoint_path):  
+        return 0, float('-inf')  
+    
+    logging.info(f"Loading checkpoint from {checkpoint_path}")  
+    checkpoint = torch.load(checkpoint_path)  
+    
+    model.load_state_dict(checkpoint['model_state_dict'])  
+    optimizer.load_state_dict(checkpoint['optimizer_state_dict'])  
+    if scheduler and 'scheduler_state_dict' in checkpoint:  
+        scheduler.load_state_dict(checkpoint['scheduler_state_dict'])  
+    
+    return checkpoint['epoch'], checkpoint['best_miou']  
+
+def train_model(model, train_loader, val_loader, config):  
     """训练模型的主函数"""  
-    logging.info("开始训练...")  
-    
+    device = setup_device()  
     model = model.to(device)  
-    criterion = RomoClipLoss(  
-        weights=config['training'].get('loss_weights', [0.5, 0.3, 0.2]),  
-        ignore_index=config['training'].get('ignore_index', 0)  
-    )  
     
-    optimizer = torch.optim.AdamW(  
+    # 优化器  
+    optimizer = optim.AdamW(  
         model.parameters(),  
         lr=config['training']['learning_rate'],  
         weight_decay=config['training']['weight_decay']  
     )  
     
+    # 学习率调度器  
     scheduler = CosineAnnealingWarmRestarts(  
         optimizer,  
         T_0=config['training']['scheduler_T0'],  
+        T_mult=config['training']['scheduler_T_mult'],  
         eta_min=config['training']['min_lr']  
     )  
     
-    scaler = GradScaler()  
-    early_stopping = EarlyStopping(patience=config['training']['patience'])  
-    best_val_loss = float('inf')  
+    # 损失函数  
+    criterion = create_loss_fn()  
     
-    for epoch in range(config['training']['epochs']):  
+    # 混合精度训练  
+    scaler = GradScaler()  
+    
+    # 加载检查点  
+    start_epoch, best_miou = load_checkpoint(  
+        model, optimizer, scheduler,  
+        os.path.join(config['paths']['model']['save_dir'], 'latest.pth')  
+    )  
+    
+    patience_counter = 0  
+    
+    for epoch in range(start_epoch, config['training']['epochs']):  
+        # 训练阶段  
         model.train()  
-        epoch_loss = 0  
-        loss_components = {'ce_loss': 0, 'dice_loss': 0, 'feature_loss': 0}  
+        epoch_loss = AverageMeter()  
+        epoch_start = time.time()  
         
-        for batch in tqdm(train_loader, desc=f"Epoch {epoch+1}/{config['training']['epochs']}"):  
-            images = batch['image'].to(device)  
-            masks = batch['mask'].to(device)  
-            clip_features = batch.get('clip_features')  
-            if clip_features is not None:  
-                clip_features = clip_features.to(device)  
+        for images, masks in train_loader:  
+            images = images.to(device)  
+            masks = masks.to(device)  
+            
+            # 混合精度训练  
+            with autocast():  
+                outputs = model(images)  
+                loss = criterion(outputs, masks)  
             
             optimizer.zero_grad()  
+            scaler.scale(loss['total']).backward()  
             
-            try:  
-                with autocast():  
-                    outputs = model(images)  
-                    loss, components = criterion(  
-                        outputs=outputs,  
-                        targets=masks,  
-                        clip_features=clip_features,  
-                        pred_features=outputs.get('features')  
-                    )  
-                
-                scaler.scale(loss).backward()  
-                
-                if config['training'].get('max_grad_norm'):  
-                    torch.nn.utils.clip_grad_norm_(  
-                        model.parameters(),  
-                        config['training']['max_grad_norm']  
-                    )  
-                
-                scaler.step(optimizer)  
-                scaler.update()  
-                
-                epoch_loss += loss.item()  
-                for k, v in components.items():  
-                    loss_components[k] += v  
-                
-            except RuntimeError as e:  
-                logging.error(f"训练批次错误: {str(e)}")  
-                continue  
-        
-        # 计算平均损失  
-        num_batches = len(train_loader)  
-        train_stats = {  
-            'train_loss': epoch_loss / num_batches,  
-            **{k: v / num_batches for k, v in loss_components.items()}  
-        }  
-        
-        # 验证  
-        val_stats = validate(model, val_loader, criterion, device)  
+            # 梯度裁剪  
+            if config['training']['clip_grad_norm'] > 0:  
+                scaler.unscale_(optimizer)  
+                torch.nn.utils.clip_grad_norm_(  
+                    model.parameters(),  
+                    config['training']['clip_grad_norm']  
+                )  
+            
+            scaler.step(optimizer)  
+            scaler.update()  
+            
+            # 更新epoch损失  
+            epoch_loss.update(loss['total'].item())  
         
         scheduler.step()  
-        current_lr = optimizer.param_groups[0]['lr']  
         
-        # 记录训练信息  
-        logging.info(  
-            f"Epoch [{epoch + 1}/{config['training']['epochs']}] "  
-            f"Train Loss: {train_stats['train_loss']:.4f} "  
-            f"(CE: {train_stats['ce_loss']:.4f}, "  
-            f"Dice: {train_stats['dice_loss']:.4f}, "  
-            f"Feature: {train_stats['feature_loss']:.4f}) "  
-            f"Val Loss: {val_stats['val_loss']:.4f} "  
-            f"LR: {current_lr:.6f}"  
-        )  
+        # 计算epoch训练时间  
+        epoch_time = time.time() - epoch_start  
         
-        # 保存最佳模型  
-        if val_stats['val_loss'] < best_val_loss:  
-            best_val_loss = val_stats['val_loss']  
-            torch.save({  
-                'epoch': epoch,  
-                'model_state_dict': model.state_dict(),  
-                'optimizer_state_dict': optimizer.state_dict(),  
-                'scheduler_state_dict': scheduler.state_dict(),  
-                'best_val_loss': best_val_loss,  
-                'config': config  
-            }, os.path.join(config['paths']['model']['save_dir'], 'best_model.pth'))  
-            logging.info(f"保存最佳模型 (epoch {epoch + 1})")  
-        
-        if early_stopping(val_stats['val_loss']):  
-            logging.info(f"Early stopping triggered at epoch {epoch + 1}")  
-            break  
+        # 验证  
+        if (epoch + 1) % config['training']['val_frequency'] == 0:  
+            val_metrics = validate(model, val_loader, criterion, device, epoch+1, config)  
             
-    return best_val_loss  
+            # 记录训练和验证结果  
+            logging.info(  
+                f"Epoch {epoch+1}/{config['training']['epochs']} "  
+                f"[{epoch_time:.2f}s] - "  
+                f"Train Loss: {epoch_loss.avg:.4f}, "  
+                f"Val Loss: {val_metrics['val_loss']:.4f}, "  
+                f"Val Acc: {val_metrics['pixel_acc']:.4f}, "  
+                f"Val mIoU: {val_metrics['mean_iou']:.4f}"  
+            )  
+            
+            # 保存检查点  
+            is_best = val_metrics['mean_iou'] > best_miou  
+            if is_best:  
+                best_miou = val_metrics['mean_iou']  
+                patience_counter = 0  
+            else:  
+                patience_counter += 1  
+            
+            save_checkpoint(  
+                {  
+                    'epoch': epoch + 1,  
+                    'model_state_dict': model.state_dict(),  
+                    'optimizer_state_dict': optimizer.state_dict(),  
+                    'scheduler_state_dict': scheduler.state_dict(),  
+                    'best_miou': best_miou,  
+                    'config': config  
+                },  
+                os.path.join(config['paths']['model']['save_dir'], 'latest.pth'),  
+                is_best  
+            )  
+        
+        # 早停  
+        if patience_counter >= config['training']['patience']:  
+            logging.info(f"Early stopping triggered after {epoch+1} epochs")  
+            break  
+    
+    logging.info("Training completed!")  
+    return model  
 
 def main():  
     """主函数"""  
     try:  
-        # 加载配置  
+        # 配置和日志  
         config = get_config()  
         
-        # 设置日志  
-        logging.basicConfig(  
-            level=logging.INFO,  
-            format='%(asctime)s - %(levelname)s - %(message)s',  
-            handlers=[  
-                logging.FileHandler(  
-                    os.path.join(config['paths']['model']['save_dir'], 'training.log')  
-                ),  
-                logging.StreamHandler()  
-            ]  
-        )  
+        # 创建实验目录  
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')  
+        exp_dir = Path(config['paths']['model']['save_dir']) / timestamp  
+        exp_dir.mkdir(parents=True, exist_ok=True)  
         
-        # 设置设备  
-        device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')  
-        logging.info(f"使用设备: {device}")  
+        # 设置日志  
+        log_path = exp_dir / 'training.log'  
+        setup_logging(log_path)  
+        
+        # 保存配置  
+        import json  
+        with open(exp_dir / 'config.json', 'w') as f:  
+            json.dump(config, f, indent=4)  
+        
+        logging.info("Starting training pipeline...")  
+        
+        # 加载数据  
+        image_path = Path(config['paths']['data']['images']) / config['paths']['input']['train_image']  
+        label_path = Path(config['paths']['data']['images']) / config['paths']['input']['train_label']  
+        
+        image, labels, _ = load_and_save_data(  
+            image_path=image_path,  
+            label_path=label_path,  
+            output_dir=config['paths']['data']['process']  
+        )  
+        logging.info(f"Data loaded - Image shape: {image.shape}, Labels shape: {labels.shape}")  
         
         # 创建数据加载器  
-        train_loader, val_loader = create_dataloaders(config)  
-        logging.info("数据加载器创建成功")  
-        
-        # 初始化模型  
-        model = YourModel(**config['model'])  
-        if torch.cuda.device_count() > 1:  
-            model = nn.DataParallel(model)  
-        logging.info(f"模型初始化完成，使用 {torch.cuda.device_count()} 个GPU")  
-        
-        # 训练模型  
-        best_loss = train_model(  
-            model=model,  
-            train_loader=train_loader,  
-            val_loader=val_loader,  
-            device=device,  
-            config=config  
+        train_loader, val_loader = create_dataloaders(  
+            image=image,  
+            labels=labels,  
+            patch_size=config['dataset']['patch_size'],  
+            num_patches=config['dataset']['patch_number'],  
+            batch_size=config['training']['batch_size'],  
+            train_ratio=config['dataset']['train_val_split'],  
+            num_workers=config['dataset']['num_workers']  
         )  
         
-        logging.info(f"训练完成! 最佳验证损失: {best_loss:.4f}")  
+        # 初始化模型  
+        model = RemoteClipUNet(  
+            model_name=config['model']['model_name'],  
+            remoteclip_path=config['paths']['model']['clip_ckpt'],  
+            num_classes=config['dataset']['num_classes']  
+        )  
+        
+        # 训练模型  
+        model = train_model(model, train_loader, val_loader, config)  
         
     except Exception as e:  
-        logging.error(f"训练过程发生错误: {str(e)}")  
+        logging.error(f"Error occurred: {str(e)}", exc_info=True)  
         raise  
 
-if __name__ == "__main__":  
-    main()  
+if __name__ == '__main__':  
+    main()

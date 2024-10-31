@@ -1,252 +1,155 @@
 import torch  
 import torch.nn as nn  
 import torch.nn.functional as F  
-from typing import Optional, Dict, Union, Tuple  
-from transformers import CLIPVisionModel  
+import open_clip  
+import numpy as np  
 
 class DoubleConv(nn.Module):  
-    """双卷积模块"""  
-    def __init__(self, in_channels: int, out_channels: int, dropout_rate: float = 0.2):  
+    """双重卷积块"""  
+    def __init__(self, in_channels, out_channels):  
         super().__init__()  
         self.double_conv = nn.Sequential(  
             nn.Conv2d(in_channels, out_channels, kernel_size=3, padding=1),  
             nn.BatchNorm2d(out_channels),  
             nn.ReLU(inplace=True),  
-            nn.Dropout2d(p=dropout_rate),  
             nn.Conv2d(out_channels, out_channels, kernel_size=3, padding=1),  
             nn.BatchNorm2d(out_channels),  
-            nn.ReLU(inplace=True),  
-            nn.Dropout2d(p=dropout_rate)  
+            nn.ReLU(inplace=True)  
         )  
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:  
+    def forward(self, x):  
         return self.double_conv(x)  
 
-class AttentionGate(nn.Module):  
-    """改进的注意力门控模块"""  
-    def __init__(self, F_g: int, F_l: int, F_int: int):  
+class RemoteClipUNet(nn.Module):  
+    def __init__(self, model_name='ViT-B-32', ckpt_path=None, num_classes=1, use_aux_loss=True, device=None):  
         super().__init__()  
-        self.W_g = nn.Sequential(  
-            nn.Conv2d(F_g, F_int, kernel_size=1),  
-            nn.BatchNorm2d(F_int)  
-        )  
-        self.W_x = nn.Sequential(  
-            nn.Conv2d(F_l, F_int, kernel_size=1),  
-            nn.BatchNorm2d(F_int)  
-        )  
-        self.psi = nn.Sequential(  
-            nn.Conv2d(F_int, 1, kernel_size=1),  
-            nn.BatchNorm2d(1),  
-            nn.Sigmoid()  
-        )  
-        self.relu = nn.ReLU(inplace=True)  
-
-    def forward(self, g: torch.Tensor, x: torch.Tensor) -> torch.Tensor:  
-        g1 = self.W_g(g)  
-        x1 = self.W_x(x)  
-        psi = self.relu(g1 + x1)  
-        psi = self.psi(psi)  
-        return x * psi  
-
-class SpatialAttention(nn.Module):  
-    """空间注意力模块"""  
-    def __init__(self, kernel_size: int = 7):  
-        super().__init__()  
-        self.conv = nn.Conv2d(2, 1, kernel_size, padding=kernel_size//2)  
-        self.sigmoid = nn.Sigmoid()  
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:  
-        avg_out = torch.mean(x, dim=1, keepdim=True)  
-        max_out, _ = torch.max(x, dim=1, keepdim=True)  
-        x = torch.cat([avg_out, max_out], dim=1)  
-        x = self.conv(x)  
-        return self.sigmoid(x)  
-
-class ChannelAttention(nn.Module):  
-    """通道注意力模块"""  
-    def __init__(self, in_channels: int, ratio: int = 16):  
-        super().__init__()  
-        self.avg_pool = nn.AdaptiveAvgPool2d(1)  
-        self.max_pool = nn.AdaptiveMaxPool2d(1)  
-        self.fc1 = nn.Conv2d(in_channels, in_channels // ratio, 1)  
-        self.relu = nn.ReLU(inplace=True)  
-        self.fc2 = nn.Conv2d(in_channels // ratio, in_channels, 1)  
-        self.sigmoid = nn.Sigmoid()  
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:  
-        avg_out = self.fc2(self.relu(self.fc1(self.avg_pool(x))))  
-        max_out = self.fc2(self.relu(self.fc1(self.max_pool(x))))  
-        out = avg_out + max_out  
-        return self.sigmoid(out)  
-
-class Down(nn.Module):  
-    """下采样模块"""  
-    def __init__(self, in_channels: int, out_channels: int, dropout_rate: float = 0.2):  
-        super().__init__()  
-        self.maxpool_conv = nn.Sequential(  
-            nn.MaxPool2d(2),  
-            DoubleConv(in_channels, out_channels, dropout_rate)  
-        )  
-        self.channel_attention = ChannelAttention(out_channels)  
-        self.spatial_attention = SpatialAttention()  
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:  
-        x = self.maxpool_conv(x)  
-        ca = self.channel_attention(x)  
-        sa = self.spatial_attention(x)  
-        return x * ca * sa  
-
-class Up(nn.Module):  
-    """上采样模块"""  
-    def __init__(self, in_channels: int, out_channels: int, dropout_rate: float = 0.2,   
-                 bilinear: bool = False):  
-        super().__init__()  
-        if bilinear:  
-            self.up = nn.Upsample(scale_factor=2, mode='bilinear', align_corners=True)  
-            self.conv = DoubleConv(in_channels, out_channels, dropout_rate)  
-        else:  
-            self.up = nn.ConvTranspose2d(in_channels, in_channels // 2, kernel_size=2, stride=2)  
-            self.conv = DoubleConv(in_channels, out_channels, dropout_rate)  
+        self.num_classes = num_classes  
+        self.use_aux_loss = use_aux_loss  
+        self.device = device if device else ('cuda' if torch.cuda.is_available() else 'cpu')  
         
-        self.attention = AttentionGate(F_g=in_channels//2, F_l=in_channels//2, F_int=in_channels//4)  
-
-    def forward(self, x1: torch.Tensor, x2: torch.Tensor) -> torch.Tensor:  
-        x1 = self.up(x1)  
+        # 加载CLIP模型  
+        self.clip_model, _, self.preprocess = open_clip.create_model_and_transforms(model_name)  
         
-        # 处理输入尺寸不匹配  
-        diff_y = x2.size()[2] - x1.size()[2]  
-        diff_x = x2.size()[3] - x1.size()[3]  
-        x1 = F.pad(x1, [diff_x // 2, diff_x - diff_x // 2,  
-                       diff_y // 2, diff_y - diff_y // 2])  
+        if ckpt_path:  
+            ckpt = torch.load(ckpt_path, map_location='cpu')  
+            self.clip_model.load_state_dict(ckpt)  
+
+        # 获取视觉编码器  
+        self.visual_encoder = self.clip_model.visual  
         
-        # 应用注意力机制  
-        x2_attended = self.attention(g=x1, x=x2)  
-        x = torch.cat([x2_attended, x1], dim=1)  
-        return self.conv(x)  
+        # 冻结参数  
+        for param in self.visual_encoder.parameters():  
+            param.requires_grad = False  
 
-class RomoClipUNet(nn.Module):  
-    def __init__(self,   
-                 in_channels: int = 4,   
-                 out_channels: int = 8,  
-                 initial_features: int = 64,  
-                 dropout_rate: float = 0.2,  
-                 bilinear: bool = False,  
-                 clip_model_name: str = "MVRL/RomoClip",  
-                 freeze_clip: bool = True):  
-        super().__init__()  
-        self.in_channels = in_channels  
-        self.out_channels = out_channels  
-        self.bilinear = bilinear  
-        factor = 2 if bilinear else 1  
+        # 获取图像尺寸和patch size  
+        self.image_size = self.visual_encoder.image_size  
+        self.patch_size = self.visual_encoder.patch_size  
+        self.grid_size = self.image_size // self.patch_size  
 
-        # CLIP视觉编码器  
-        self.clip_encoder = CLIPVisionModel.from_pretrained(clip_model_name)  
-        if freeze_clip:  
-            for param in self.clip_encoder.parameters():  
-                param.requires_grad = False  
+        # 特征融合层  
+        self.fusion_conv = DoubleConv(768, 256)  
 
-        # CLIP特征转换  
-        self.clip_proj = nn.Sequential(  
-            nn.Conv2d(768, initial_features*16//factor, kernel_size=1),  
-            nn.BatchNorm2d(initial_features*16//factor),  
-            nn.ReLU(inplace=True),  
-            nn.Dropout2d(dropout_rate)  
-        )  
-
-        # 输入适配  
-        self.input_adapt = None  
-        if in_channels != 3:  
-            self.input_adapt = nn.Conv2d(in_channels, 3, kernel_size=1)  
-
-        # Encoder  
-        self.inc = DoubleConv(in_channels, initial_features, dropout_rate)  
-        self.down1 = Down(initial_features, initial_features*2, dropout_rate)  
-        self.down2 = Down(initial_features*2, initial_features*4, dropout_rate)  
-        self.down3 = Down(initial_features*4, initial_features*8, dropout_rate)  
-        self.down4 = Down(initial_features*8, initial_features*16//factor, dropout_rate)  
-
-        # 特征融合  
-        self.fusion = nn.Sequential(  
-            nn.Conv2d(initial_features*32//factor, initial_features*16//factor, 1),  
-            nn.BatchNorm2d(initial_features*16//factor),  
-            nn.ReLU(inplace=True),  
-            nn.Dropout2d(dropout_rate)  
-        )  
-
-        # Decoder  
-        self.up1 = Up(initial_features*16, initial_features*8//factor, dropout_rate, bilinear)  
-        self.up2 = Up(initial_features*8, initial_features*4//factor, dropout_rate, bilinear)  
-        self.up3 = Up(initial_features*4, initial_features*2//factor, dropout_rate, bilinear)  
-        self.up4 = Up(initial_features*2, initial_features, dropout_rate, bilinear)  
+        # 编码器保存的特征  
+        self.encoder_features = []  
+        
+        # 解码器部分  
+        self.decoder1 = DoubleConv(256, 128)  
+        self.decoder2 = DoubleConv(128, 64)  
+        self.decoder3 = DoubleConv(64, 32)  
+        
+        self.up1 = nn.ConvTranspose2d(256, 128, kernel_size=2, stride=2)  
+        self.up2 = nn.ConvTranspose2d(128, 64, kernel_size=2, stride=2)  
+        self.up3 = nn.ConvTranspose2d(64, 32, kernel_size=2, stride=2)  
 
         # 输出层  
-        self.outc = nn.Sequential(  
-            nn.Conv2d(initial_features, out_channels, kernel_size=1),  
-            nn.BatchNorm2d(out_channels)  
-        )  
+        self.final_conv = nn.Conv2d(32, num_classes, kernel_size=1)  
 
-        # 辅助分类头  
-        self.aux_head = nn.Sequential(  
-            nn.AdaptiveAvgPool2d(1),  
-            nn.Flatten(),  
-            nn.Linear(initial_features*16//factor, out_channels)  
-        )  
+        if use_aux_loss:  
+            self.aux_head = nn.Sequential(  
+                DoubleConv(256, 128),  
+                nn.Conv2d(128, num_classes, kernel_size=1)  
+            )  
 
-        self.initialize_weights()  
+    def reshape_visual_features(self, x):  
+        """重塑视觉特征为空间形式"""  
+        # 移除类别token  
+        x = x[:, 1:, :]  
+        # 重塑为空间特征 [B, H*W, C] -> [B, C, H, W]  
+        x = x.permute(0, 2, 1)  
+        x = x.reshape(x.shape[0], x.shape[1], self.grid_size, self.grid_size)  
+        return x  
 
-    def forward(self, x: torch.Tensor) -> Dict[str, torch.Tensor]:  
-        # CLIP特征提取  
-        if self.input_adapt is not None:  
-            clip_input = self.input_adapt(x)  
-        else:  
-            clip_input = x  
-
-        clip_input = F.interpolate(clip_input, size=(224, 224),   
-                                 mode='bilinear', align_corners=False)  
+    def forward(self, x):  
+        # 确保输入尺寸正确  
+        if x.shape[-1] != self.image_size or x.shape[-2] != self.image_size:  
+            x = F.interpolate(x, size=(self.image_size, self.image_size),   
+                            mode='bilinear', align_corners=False)  
         
-        clip_features = self.clip_encoder(clip_input).last_hidden_state  
-        batch_size = clip_features.shape[0]  
-        clip_features = clip_features.reshape(batch_size, 768, 14, 14)  
-        clip_features = self.clip_proj(clip_features)  
-
-        # Encoder路径  
-        x1 = self.inc(x)  
-        x2 = self.down1(x1)  
-        x3 = self.down2(x2)  
-        x4 = self.down3(x3)  
-        x5 = self.down4(x4)  
-
+        # 视觉编码器特征提取  
+        with torch.no_grad():  
+            visual_features = self.visual_encoder(x)  
+        
+        # 重塑特征  
+        x = self.reshape_visual_features(visual_features)  
+        
         # 特征融合  
-        clip_features = F.interpolate(clip_features, size=x5.shape[2:],  
-                                    mode='bilinear', align_corners=False)  
-        fused_features = self.fusion(torch.cat([clip_features, x5], dim=1))  
-
-        # Decoder路径  
-        x = self.up1(fused_features, x4)  
-        x = self.up2(x, x3)  
-        x = self.up3(x, x2)  
-        x = self.up4(x, x1)  
+        x = self.fusion_conv(x)  
         
-        # 主要输出  
-        logits = self.outc(x)  
+        # 存储辅助损失的特征  
+        aux_feature = x if self.use_aux_loss else None  
+
+        # 解码器路径  
+        x = self.up1(x)  
+        x = self.decoder1(x)  
         
-        # 辅助输出  
-        aux_out = self.aux_head(fused_features)  
+        x = self.up2(x)  
+        x = self.decoder2(x)  
+        
+        x = self.up3(x)  
+        x = self.decoder3(x)  
 
-        return {  
-            'segmentation': logits,  
-            'auxiliary': aux_out,  
-            'features': fused_features,  
-            'clip_features': clip_features  
-        }  
+        # 最终输出  
+        out = self.final_conv(x)  
+        
+        # 确保输出尺寸与输入匹配  
+        if out.shape[-1] != x.shape[-1] or out.shape[-2] != x.shape[-2]:  
+            out = F.interpolate(out, size=(x.shape[-2], x.shape[-1]),   
+                              mode='bilinear', align_corners=False)  
 
-    def initialize_weights(self):  
-        """初始化新增加的层的权重"""  
-        for m in self.modules():  
-            if isinstance(m, (nn.Conv2d, nn.Linear)):  
-                nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')  
-                if m.bias is not None:  
-                    nn.init.constant_(m.bias, 0)  
-            elif isinstance(m, nn.BatchNorm2d):  
-                nn.init.constant_(m.weight, 1)  
-                nn.init.constant_(m.bias, 0)
+        if self.use_aux_loss:  
+            aux_out = self.aux_head(aux_feature)  
+            aux_out = F.interpolate(aux_out, size=(x.shape[-2], x.shape[-1]),   
+                                  mode='bilinear', align_corners=False)  
+            return {'main': out, 'aux': aux_out}  
+        
+        return {'main': out}  
+
+    @torch.no_grad()  
+    def preprocess_image(self, image):  
+        """预处理图像"""  
+        return self.preprocess(image)  
+
+def create_loss_fn(aux_weight=0.4):  
+    """创建损失函数"""  
+    criterion = nn.CrossEntropyLoss()  
+    
+    def loss_fn(outputs, target):  
+        losses = {}  
+        
+        # 确保target的形状正确  
+        if target.dim() == 3:  
+            target = target.unsqueeze(1)  
+        
+        # 主要损失  
+        losses['main'] = criterion(outputs['main'], target)  
+        
+        # 辅助损失  
+        if 'aux' in outputs:  
+            losses['aux'] = criterion(outputs['aux'], target)  
+            losses['total'] = losses['main'] + aux_weight * losses['aux']  
+        else:  
+            losses['total'] = losses['main']  
+            
+        return losses  
+    
+    return loss_fn 

@@ -1,35 +1,35 @@
 import numpy as np  
 import torch  
-import torch.nn.functional as F  
+import random  
+from typing import Tuple, List, Optional, Union, Dict
 from torch.utils.data import Dataset, DataLoader, random_split  
 import random  
-from typing import Tuple, List, Optional, Union  
-from torchvision import transforms  
+import albumentations as A  
+from albumentations.pytorch import ToTensorV2  
 
 class RemoteSensingDataset(Dataset):  
     """遥感影像数据集"""  
     def __init__(self,   
                  image: np.ndarray,  
                  labels: Optional[np.ndarray] = None,  
-                 patch_size: int = 256,  
+                 patch_size: int = 224,  
                  num_patches: int = 1000,  
-                 clip_size: int = 224,  # RomoClip输入尺寸  
-                 transform = None):  
+                 transform = None,  
+                 is_train: bool = True):  
         """  
         Args:  
             image: 输入图像 [C, H, W]  
             labels: 标签图像 [H, W]  
-            patch_size: 原始图像块大小  
+            patch_size: 图像块大小  
             num_patches: 随机采样的图像块数量  
-            clip_size: RomoClip需要的输入尺寸  
             transform: 数据增强转换  
+            is_train: 是否为训练模式  
         """  
         self.image = image  
         self.labels = labels  
         self.patch_size = patch_size  
-        self.clip_size = clip_size  
         self.num_patches = num_patches  
-        self.transform = transform  
+        self.is_train = is_train  
 
         # 确保图像格式正确  
         self.h, self.w = self.image.shape[1:]  # C, H, W  
@@ -43,79 +43,152 @@ class RemoteSensingDataset(Dataset):
         if self.h < self.patch_size or self.w < self.patch_size:  
             raise ValueError(f"Patch size {patch_size} is too large for image size {self.h}x{self.w}")  
 
-        # RomoClip标准化转换  
-        self.clip_transform = transforms.Compose([  
-            transforms.Normalize(mean=[0.48145466, 0.4578275, 0.40821073],  
-                              std=[0.26862954, 0.26130258, 0.27577711])  
-        ])  
+        # 设置数据增强  
+        self.transform = transform if transform is not None else self.get_default_transforms()  
+
+    def get_default_transforms(self) -> A.Compose:  
+        """获取默认的数据增强策略"""  
+        if self.is_train:  
+            return A.Compose([  
+                A.RandomRotate90(p=0.5),  
+                A.Flip(p=0.5),  
+                A.ShiftScaleRotate(  
+                    shift_limit=0.1,  
+                    scale_limit=0.15,  
+                    rotate_limit=30,  
+                    p=0.5  
+                ),  
+                A.OneOf([  
+                    A.ElasticTransform(  
+                        alpha=120,  
+                        sigma=120 * 0.05,  
+                        alpha_affine=120 * 0.03,  
+                        p=0.5  
+                    ),  
+                    A.GridDistortion(p=0.5),  
+                    A.OpticalDistortion(  
+                        distort_limit=1,  
+                        shift_limit=0.5,  
+                        p=0.5  
+                    ),  
+                ], p=0.3),  
+                A.ColorJitter(  
+                    brightness=0.2,  
+                    contrast=0.2,  
+                    saturation=0.2,  
+                    hue=0.1,  
+                    p=0.5  
+                ),  
+                A.GaussNoise(p=0.3),  
+                A.Normalize(  
+                    mean=[0.485, 0.456, 0.406],   
+                    std=[0.229, 0.224, 0.225]  
+                ),  
+                ToTensorV2(),  
+            ], additional_targets={'mask': 'mask'})  
+        else:  
+            return A.Compose([  
+                A.Normalize(  
+                    mean=[0.485, 0.456, 0.406],   
+                    std=[0.229, 0.224, 0.225]  
+                ),  
+                ToTensorV2(),  
+            ], additional_targets={'mask': 'mask'})  
 
     def __len__(self) -> int:  
         return self.num_patches  
 
     def __getitem__(self, idx: int) -> Union[torch.Tensor, Tuple[torch.Tensor, torch.Tensor]]:  
-        # 随机选择图像块位置  
-        max_x = self.w - self.patch_size  
-        max_y = self.h - self.patch_size  
-        x = random.randint(0, max_x)  
-        y = random.randint(0, max_y)  
+        # 随机选择图像块位置或使用网格采样  
+        if self.is_train:  
+            max_x = self.w - self.patch_size  
+            max_y = self.h - self.patch_size  
+            x = random.randint(0, max_x)  
+            y = random.randint(0, max_y)  
+        else:  
+            # 网格采样  
+            grid_size = int(np.sqrt(self.num_patches))  
+            stride = min((self.w - self.patch_size) // (grid_size - 1),  
+                        (self.h - self.patch_size) // (grid_size - 1))  
+            x = (idx % grid_size) * stride  
+            y = (idx // grid_size) * stride  
+            x = min(x, self.w - self.patch_size)  
+            y = min(y, self.h - self.patch_size)  
 
         # 提取图像块  
         image_patch = self.image[:, y:y+self.patch_size, x:x+self.patch_size]  
+        # 转换通道顺序从[C,H,W]到[H,W,C]用于albumentations  
+        image_patch = np.transpose(image_patch, (1, 2, 0))  
         
-        # 应用数据增强  
-        if self.transform:  
-            image_patch = self.transform(image_patch)  
-        
-        # 转换为tensor并归一化到[0,1]  
-        image_patch = torch.from_numpy(image_patch).float()  
-        if image_patch.max() > 1:  
-            image_patch = image_patch / 255.0  
-
-        # 处理非RGB输入  
-        if image_patch.shape[0] != 3:  
-            # 如果是单通道，复制到3通道  
-            if image_patch.shape[0] == 1:  
-                image_patch = image_patch.repeat(3, 1, 1)  
-            # 如果是4通道或更多，取前3通道  
-            else:  
-                image_patch = image_patch[:3]  
-
-        # 调整大小到RomoClip所需的尺寸  
-        clip_patch = F.interpolate(  
-            image_patch.unsqueeze(0),   
-            size=(self.clip_size, self.clip_size),   
-            mode='bilinear',   
-            align_corners=False  
-        ).squeeze(0)  
-
-        # 应用RomoClip的标准化  
-        clip_patch = self.clip_transform(clip_patch)  
-        
-        # 如果有标签，同时提取标签块  
         if self.labels is not None:  
             label_patch = self.labels[y:y+self.patch_size, x:x+self.patch_size]  
-            # 调整标签大小以匹配RomoClip输出  
-            label_patch = torch.from_numpy(label_patch).long()  
-            label_patch = F.interpolate(  
-                label_patch.float().unsqueeze(0).unsqueeze(0),  
-                size=(self.clip_size, self.clip_size),  
-                mode='nearest'  
-            ).squeeze(0).squeeze(0).long()  
+            
+            # 应用数据增强  
+            transformed = self.transform(image=image_patch, mask=label_patch)  
+            image_patch = transformed['image']  
+            label_patch = torch.from_numpy(transformed['mask']).long()  
             
             validate_labels(label_patch)  
-            return clip_patch, label_patch  
-            
-        return clip_patch  
+            return image_patch, label_patch  
+        else:  
+            # 只处理图像  
+            transformed = self.transform(image=image_patch)  
+            image_patch = transformed['image']  
+            return image_patch  
 
-def validate_labels(labels: torch.Tensor, num_classes: int = 9) -> None:
-    """验证标签值是否在有效范围内"""
-    unique_labels = torch.unique(labels)
-    min_label = unique_labels.min().item()
-    max_label = unique_labels.max().item()
-    if min_label < 0 or max_label >= num_classes:
-        raise ValueError(f"Labels must be in range [0, {num_classes-1}], "
-                      f"but got range [{min_label}, {max_label}]")
+# 保持其他函数不变  
+def validate_labels(labels: torch.Tensor, num_classes: int = 9) -> None:  
+    """验证标签值是否在有效范围内"""  
+    unique_labels = torch.unique(labels)  
+    min_label = unique_labels.min().item()  
+    max_label = unique_labels.max().item()  
+    if min_label < 0 or max_label >= num_classes:  
+        raise ValueError(f"Labels must be in range [0, {num_classes-1}], "  
+                      f"but got range [{min_label}, {max_label}]")  
+
+def create_dataloaders(image: np.ndarray,  
+                      labels: np.ndarray,  
+                      patch_size: int,  
+                      num_patches: int,  
+                      batch_size: int,  
+                      train_ratio: float = 0.8,  
+                      num_workers = 4,
+                      transform = None) -> Tuple[DataLoader, DataLoader]:  
+    """创建训练和验证数据加载器"""  
     
+    dataset = RemoteSensingDataset(  
+        image=image,  
+        labels=labels,  
+        patch_size=patch_size,  
+        num_patches=num_patches,  
+        transform=transform  
+    )  
+    
+    # 划分训练集和验证集  
+    train_size = int(train_ratio * len(dataset))  
+    val_size = len(dataset) - train_size  
+    train_dataset, val_dataset = random_split(dataset, [train_size, val_size])  
+    
+    # 创建数据加载器  
+    train_loader = DataLoader(  
+        train_dataset,  
+        batch_size=batch_size,  
+        shuffle=True,  
+        num_workers=num_workers,  
+        pin_memory=True  
+    )  
+    
+    val_loader = DataLoader(  
+        val_dataset,  
+        batch_size=batch_size,  
+        shuffle=False,  
+        num_workers=num_workers,  
+        pin_memory=True  
+    )  
+    
+    return train_loader, val_loader
+
+
 def split_image_into_patches(image: np.ndarray, 
                            patch_size: int = 256, 
                            overlap: int = 128) -> List[np.ndarray]:
@@ -225,46 +298,3 @@ def reconstruct_image_from_patches(predictions, image_size, patch_size, overlap)
             idx += 1  
     
     return reconstructed  
-
-def create_dataloaders(image: np.ndarray,  
-                      labels: np.ndarray,  
-                      patch_size: int,  
-                      num_patches: int,  
-                      batch_size: int,  
-                      train_ratio: float = 0.8,  
-                      transform = None,  
-                      clip_size: int = 224) -> Tuple[DataLoader, DataLoader]:  
-    """创建训练和验证数据加载器"""  
-    
-    dataset = RemoteSensingDataset(  
-        image=image,  
-        labels=labels,  
-        patch_size=patch_size,  
-        num_patches=num_patches,  
-        clip_size=clip_size,  
-        transform=transform  
-    )  
-    
-    # 划分训练集和验证集  
-    train_size = int(train_ratio * len(dataset))  
-    val_size = len(dataset) - train_size  
-    train_dataset, val_dataset = random_split(dataset, [train_size, val_size])  
-    
-    # 创建数据加载器  
-    train_loader = DataLoader(  
-        train_dataset,  
-        batch_size=batch_size,  
-        shuffle=True,  
-        num_workers=4,  
-        pin_memory=True  
-    )  
-    
-    val_loader = DataLoader(  
-        val_dataset,  
-        batch_size=batch_size,  
-        shuffle=False,  
-        num_workers=4,  
-        pin_memory=True  
-    )  
-    
-    return train_loader, val_loader
