@@ -16,7 +16,7 @@ from utils import (
     calculate_iou,  
     multiclass_dice_coefficient  
 )  
-from dataset import RemoteSensingDataset, create_dataloaders  
+from dataset import create_dataloaders  
 from model import UNet  
 
 def validate(model, val_loader, criterion, device):  

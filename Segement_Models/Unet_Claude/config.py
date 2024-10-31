@@ -7,16 +7,13 @@ import torch
 class Config:
     """配置管理类"""
     
-    def __init__(self, config_path: str = None):
+    def __init__(self):
         """
         初始化配置
         Args:
             config_path: 配置文件路径,默认为None使用默认配置
         """
         self.config = self._get_default_config()
-        
-        if config_path is not None:
-            self.load_config(config_path)
             
     def _get_default_config(self) -> Dict[str, Any]:
         """获取默认配置"""
@@ -74,25 +71,14 @@ class Config:
             }
         }
     
-    def load_config(self, config_path: str) -> None:
-        """从文件加载配置"""
-        with open(config_path, 'r') as f:
-            file_config = yaml.safe_load(f)
-            self.config = self._update_nested_dict(self.config, file_config)
-    
-    def save_config(self, config_path: str) -> None:
-        """保存配置到文件"""
-        with open(config_path, 'w') as f:
-            yaml.dump(self.config, f, default_flow_style=False)
-    
-    def _update_nested_dict(self, d1: Dict, d2: Dict) -> Dict:
-        """递归更新嵌套字典"""
-        for k, v in d2.items():
-            if k in d1 and isinstance(d1[k], dict) and isinstance(v, dict):
-                self._update_nested_dict(d1[k], v)
-            else:
-                d1[k] = v
-        return d1
+    # def _update_nested_dict(self, d1: Dict, d2: Dict) -> Dict:
+    #     """递归更新嵌套字典"""
+    #     for k, v in d2.items():
+    #         if k in d1 and isinstance(d1[k], dict) and isinstance(v, dict):
+    #             self._update_nested_dict(d1[k], v)
+    #         else:
+    #             d1[k] = v
+    #     return d1
     
     def get_model_path(self) -> str:
         """获取模型保存路径"""
