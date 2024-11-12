@@ -44,7 +44,7 @@ class RemoteClipUNet(nn.Module):
         # 获取图像尺寸和patch size  
         self.image_size = self.visual_encoder.image_size  
         self.patch_size = self.visual_encoder.patch_size  
-        self.grid_size = self.image_size // self.patch_size  
+        self.grid_size = self.image_size[0] // self.patch_size[0]  
 
         # 特征融合层  
         self.fusion_conv = DoubleConv(768, 256)  

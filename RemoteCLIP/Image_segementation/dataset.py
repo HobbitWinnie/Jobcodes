@@ -14,8 +14,7 @@ class RemoteSensingDataset(Dataset):
                  labels: Optional[np.ndarray] = None,  
                  patch_size: int = 224,  
                  num_patches: int = 1000,  
-                 transform = None,  
-                 is_train: bool = True):  
+                 transform = None):  
         """  
         Args:  
             image: 输入图像 [C, H, W]  
@@ -29,7 +28,6 @@ class RemoteSensingDataset(Dataset):
         self.labels = labels  
         self.patch_size = patch_size  
         self.num_patches = num_patches  
-        self.is_train = is_train  
 
         # 确保图像格式正确  
         self.h, self.w = self.image.shape[1:]  # C, H, W  
@@ -44,99 +42,37 @@ class RemoteSensingDataset(Dataset):
             raise ValueError(f"Patch size {patch_size} is too large for image size {self.h}x{self.w}")  
 
         # 设置数据增强  
-        self.transform = transform if transform is not None else self.get_default_transforms()  
-
-    def get_default_transforms(self) -> A.Compose:  
-        """获取默认的数据增强策略"""  
-        if self.is_train:  
-            return A.Compose([  
-                A.RandomRotate90(p=0.5),  
-                A.Flip(p=0.5),  
-                A.ShiftScaleRotate(  
-                    shift_limit=0.1,  
-                    scale_limit=0.15,  
-                    rotate_limit=30,  
-                    p=0.5  
-                ),  
-                A.OneOf([  
-                    A.ElasticTransform(  
-                        alpha=120,  
-                        sigma=120 * 0.05,  
-                        alpha_affine=120 * 0.03,  
-                        p=0.5  
-                    ),  
-                    A.GridDistortion(p=0.5),  
-                    A.OpticalDistortion(  
-                        distort_limit=1,  
-                        shift_limit=0.5,  
-                        p=0.5  
-                    ),  
-                ], p=0.3),  
-                A.ColorJitter(  
-                    brightness=0.2,  
-                    contrast=0.2,  
-                    saturation=0.2,  
-                    hue=0.1,  
-                    p=0.5  
-                ),  
-                A.GaussNoise(p=0.3),  
-                A.Normalize(  
-                    mean=[0.485, 0.456, 0.406],   
-                    std=[0.229, 0.224, 0.225]  
-                ),  
-                ToTensorV2(),  
-            ], additional_targets={'mask': 'mask'})  
-        else:  
-            return A.Compose([  
-                A.Normalize(  
-                    mean=[0.485, 0.456, 0.406],   
-                    std=[0.229, 0.224, 0.225]  
-                ),  
-                ToTensorV2(),  
-            ], additional_targets={'mask': 'mask'})  
+        self.transform = transform
 
     def __len__(self) -> int:  
         return self.num_patches  
 
     def __getitem__(self, idx: int) -> Union[torch.Tensor, Tuple[torch.Tensor, torch.Tensor]]:  
-        # 随机选择图像块位置或使用网格采样  
-        if self.is_train:  
-            max_x = self.w - self.patch_size  
-            max_y = self.h - self.patch_size  
-            x = random.randint(0, max_x)  
-            y = random.randint(0, max_y)  
-        else:  
-            # 网格采样  
-            grid_size = int(np.sqrt(self.num_patches))  
-            stride = min((self.w - self.patch_size) // (grid_size - 1),  
-                        (self.h - self.patch_size) // (grid_size - 1))  
-            x = (idx % grid_size) * stride  
-            y = (idx // grid_size) * stride  
-            x = min(x, self.w - self.patch_size)  
-            y = min(y, self.h - self.patch_size)  
+        # 随机选择图像块位置
+        max_x = self.w - self.patch_size
+        max_y = self.h - self.patch_size
+        x = random.randint(0, max_x)
+        y = random.randint(0, max_y)
 
-        # 提取图像块  
-        image_patch = self.image[:, y:y+self.patch_size, x:x+self.patch_size]  
-        # 转换通道顺序从[C,H,W]到[H,W,C]用于albumentations  
-        image_patch = np.transpose(image_patch, (1, 2, 0))  
+        # 提取图像块
+        image_patch = self.image[:, y:y+self.patch_size, x:x+self.patch_size]
         
-        if self.labels is not None:  
-            label_patch = self.labels[y:y+self.patch_size, x:x+self.patch_size]  
+        # 应用数据增强
+        if self.transform:
+            image_patch = self.transform(image_patch)
+        
+        # 转换为tensor
+        image_patch = torch.from_numpy(image_patch).float()
+        
+        # 如果有标签，同时提取标签块
+        if self.labels is not None:
+            label_patch = self.labels[y:y+self.patch_size, x:x+self.patch_size]
+            label_patch = torch.from_numpy(label_patch).long()
+            validate_labels(label_patch)
+            return image_patch, label_patch
             
-            # 应用数据增强  
-            transformed = self.transform(image=image_patch, mask=label_patch)  
-            image_patch = transformed['image']  
-            label_patch = torch.from_numpy(transformed['mask']).long()  
-            
-            validate_labels(label_patch)  
-            return image_patch, label_patch  
-        else:  
-            # 只处理图像  
-            transformed = self.transform(image=image_patch)  
-            image_patch = transformed['image']  
-            return image_patch  
+        return image_patch
 
-# 保持其他函数不变  
 def validate_labels(labels: torch.Tensor, num_classes: int = 9) -> None:  
     """验证标签值是否在有效范围内"""  
     unique_labels = torch.unique(labels)  

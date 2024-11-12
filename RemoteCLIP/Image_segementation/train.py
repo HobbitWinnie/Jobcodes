@@ -225,7 +225,7 @@ def main():
         # 保存配置  
         import json  
         with open(exp_dir / 'config.json', 'w') as f:  
-            json.dump(config, f, indent=4)  
+            json.dump(config.config, f, indent=4)  
         
         logging.info("Starting training pipeline...")  
         
@@ -254,7 +254,7 @@ def main():
         # 初始化模型  
         model = RemoteClipUNet(  
             model_name=config['model']['model_name'],  
-            remoteclip_path=config['paths']['model']['clip_ckpt'],  
+            ckpt_path=config['paths']['model']['clip_ckpt'],  
             num_classes=config['dataset']['num_classes']  
         )  
         

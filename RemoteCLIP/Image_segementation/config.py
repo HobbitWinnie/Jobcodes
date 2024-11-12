@@ -11,13 +11,12 @@ class Config:
         self.config = {  
             'paths': {  
                 'data': {  
-                    'root': '/home/Dataset/nw/Segmentation/CpeosTest',  
                     'images': '/home/Dataset/nw/Segmentation/CpeosTest/images',  
                     'process': '/home/Dataset/nw/Segmentation/CpeosTest/image_process',  
                     'results': '/home/Dataset/nw/Segmentation/CpeosTest/result'  
                 },  
                 'model': {  
-                    'save_dir': '/home/nw/Codes/Segement_Models/model_save',  
+                    'save_dir': '/home/nw/Codes/RemoteCLIP/Image_segementation/model_save',  
                     'best_model': 'RemoteCLIP_UNet_best_model.pth',  
                     'clip_ckpt': '/home/nw/Assets/RemoteCLIP/ckpt/RemoteCLIP-ViT-B-32.pt',  
                 },  
@@ -28,7 +27,7 @@ class Config:
                 }  
             },  
             'dataset': {  
-                'patch_size': 256,  
+                'patch_size': 224,  
                 'patch_number': 3000,  
                 'train_val_split': 0.8,  
                 'num_classes': 9,  
@@ -60,7 +59,6 @@ class Config:
         """验证配置有效性"""  
         # 验证关键路径  
         required_paths = [  
-            self.config['paths']['data']['root'],  
             self.config['paths']['data']['images'],  
             self.config['paths']['model']['clip_ckpt']  
         ]  
