@@ -55,8 +55,9 @@ class RemoteSensingDataset(Dataset):
         y = random.randint(0, max_y)
 
         # 提取图像块
-        image_patch = self.image[:, y:y+self.patch_size, x:x+self.patch_size]
-        
+        RGB_BANDS = slice(0, 3)  # 明确表示选择RGB三个波段  
+        image_patch = self.image[RGB_BANDS, y:y+self.patch_size, x:x+self.patch_size]        
+          
         # 应用数据增强
         if self.transform:
             image_patch = self.transform(image_patch)

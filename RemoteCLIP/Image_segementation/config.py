@@ -37,7 +37,7 @@ class Config:
                 'in_channels': 4,  
                 'initial_features': 128,  
                 'dropout_rate': 0.2,  
-                'model_name': 'ViT-B-32'
+                'model_name': 'ViT-B/32'
             },  
             'training': {  
                 'epochs': 2000,  
@@ -49,7 +49,8 @@ class Config:
                 'scheduler_T_mult': 2,  
                 'patience': 100,  
                 'clip_grad_norm': 1.0,  
-                'ignore_index': 0  
+                'ignore_index': 0,
+                'val_frequency': 10
             }  
         }  
         

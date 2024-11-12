@@ -41,7 +41,7 @@ def validate(model, val_loader, criterion, device, epoch, config):
     model.eval()  
     metrics = {  
         'val_loss': AverageMeter(),  
-        'pixel_acc': AverageMeter(),  
+        'accuracy': AverageMeter(),  
         'mean_iou': AverageMeter()  
     }  
     
@@ -59,7 +59,7 @@ def validate(model, val_loader, criterion, device, epoch, config):
         )  
         
         metrics['val_loss'].update(loss['total'].item())  
-        metrics['pixel_acc'].update(batch_metrics['pixel_acc'])  
+        metrics['accuracy'].update(batch_metrics['accuracy'])  
         metrics['mean_iou'].update(batch_metrics['mean_iou'])  
     
     return {k: v.avg for k, v in metrics.items()}  
@@ -174,7 +174,7 @@ def train_model(model, train_loader, val_loader, config):
                 f"[{epoch_time:.2f}s] - "  
                 f"Train Loss: {epoch_loss.avg:.4f}, "  
                 f"Val Loss: {val_metrics['val_loss']:.4f}, "  
-                f"Val Acc: {val_metrics['pixel_acc']:.4f}, "  
+                f"Val Acc: {val_metrics['accuracy']:.4f}, "  
                 f"Val mIoU: {val_metrics['mean_iou']:.4f}"  
             )  
             
