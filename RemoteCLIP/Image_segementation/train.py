@@ -1,10 +1,7 @@
-import os  
 import torch  
-import torch.nn as nn  
 import torch.optim as optim  
 from torch.cuda.amp import GradScaler, autocast  
 import logging  
-import numpy as np  
 from torch.optim.lr_scheduler import CosineAnnealingWarmRestarts  
 from pathlib import Path  
 import time  
@@ -45,9 +42,10 @@ def train_model(model, train_loader, val_loader, config):
     )  
     
     # 损失函数  
-    criterion = CombinedLoss(  
+    criterion = CombinedLoss(
         weights=config['training'].get('loss_weights', [0.5, 0.5]),  
-        ignore_index=config['training'].get('ignore_index', 0)  
+        ignore_index=config['training'].get('ignore_index', 0),
+        aux_weight=0.4       # 辅助损失的权重  
     )  
     
     # 混合精度训练  

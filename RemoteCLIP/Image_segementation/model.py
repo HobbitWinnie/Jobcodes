@@ -2,7 +2,6 @@ import torch
 import torch.nn as nn  
 import torch.nn.functional as F  
 import open_clip  
-import warnings  
 
 class DoubleConv(nn.Module):  
     """增强的双卷积块"""  
@@ -58,7 +57,7 @@ class UpBlock(nn.Module):
         super().__init__()  
         self.up = nn.ConvTranspose2d(in_channels, in_channels // 2, kernel_size=2, stride=2)  
         self.attention = AttentionGate(F_g=in_channels//2, F_l=in_channels//2)  
-        self.conv = DoubleConv(in_channels, out_channels, dropout_rate)  
+        self.conv = DoubleConv(in_channels // 2, out_channels, dropout_rate)  
 
     def forward(self, x1, x2=None):  
         x1 = self.up(x1)  
@@ -83,13 +82,12 @@ class RemoteClipUNet(nn.Module):
     def __init__(self,  
                  model_name='ViT-B-32',  
                  ckpt_path=None,  
-                 num_classes=1,  
+                 num_classes=9,  
                  dropout_rate=0.2,  
                  use_aux_loss=True,  
-                 initial_features=64):  
+                 initial_features=128):  
         super().__init__()  
         self.input_size = 224  
-        self.grid_size = 7  
         self.use_aux_loss = use_aux_loss  
         self.dropout_rate = dropout_rate  
         
@@ -108,12 +106,13 @@ class RemoteClipUNet(nn.Module):
             nn.Dropout2d(dropout_rate)  
         )  
         
-        # 解码器路径  
-        self.up1 = UpBlock(initial_features * 16, initial_features * 8, dropout_rate)  
-        self.up2 = UpBlock(initial_features * 8, initial_features * 4, dropout_rate)  
-        self.up3 = UpBlock(initial_features * 4, initial_features * 2, dropout_rate)  
-        self.up4 = UpBlock(initial_features * 2, initial_features, dropout_rate)  
-        self.up_final = UpBlock(initial_features, initial_features // 2, dropout_rate)  
+        # 修改解码器路径以适应224x224  
+        # 7 -> 14 -> 28 -> 56 -> 112 -> 224  
+        self.up1 = UpBlock(initial_features * 16, initial_features * 8, dropout_rate)  # 7->14  
+        self.up2 = UpBlock(initial_features * 8, initial_features * 4, dropout_rate)   # 14->28  
+        self.up3 = UpBlock(initial_features * 4, initial_features * 2, dropout_rate)   # 28->56  
+        self.up4 = UpBlock(initial_features * 2, initial_features, dropout_rate)       # 56->112  
+        self.up5 = UpBlock(initial_features, initial_features // 2, dropout_rate)      # 112->224  
         
         # 输出层  
         self.final_conv = nn.Conv2d(initial_features // 2, num_classes, 1)  
@@ -126,41 +125,7 @@ class RemoteClipUNet(nn.Module):
             )  
         
         self.initialize_weights()  
-
-    def _init_clip_model(self, model_name, ckpt_path):  
-        """初始化CLIP模型"""  
-        try:  
-            device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')  
-            model, _, self.preprocess_func = open_clip.create_model_and_transforms(  
-                model_name,  
-                device=device  
-            )  
-            
-            if ckpt_path:  
-                ckpt = torch.load(ckpt_path, map_location='cpu')  
-                model.load_state_dict(ckpt)  
-            
-            self.visual_encoder = model.visual.float()  
-            
-            # 冻结CLIP参数  
-            for param in self.visual_encoder.parameters():  
-                param.requires_grad = False  
-                
-        except Exception as e:  
-            raise RuntimeError(f"CLIP模型加载失败: {str(e)}")  
-    
-    def initialize_weights(self):  
-        """初始化模型权重"""  
-        for m in self.modules():  
-            if isinstance(m, (nn.Conv2d, nn.ConvTranspose2d)):  
-                if m not in self.visual_encoder.modules():  # 跳过CLIP模型的权重  
-                    nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')  
-                    if m.bias is not None:  
-                        nn.init.constant_(m.bias, 0)  
-            elif isinstance(m, nn.BatchNorm2d):  
-                nn.init.constant_(m.weight, 1)  
-                nn.init.constant_(m.bias, 0)  
-
+   
     @torch.cuda.amp.autocast()  
     def forward(self, x):  
         # 输入验证  
@@ -174,21 +139,20 @@ class RemoteClipUNet(nn.Module):
         B, D = visual_features.shape  
         x = visual_features.reshape(B, D, 1, 1)  
         x = self.feature_transform(x)  
-        x = F.interpolate(x, size=(self.grid_size, self.grid_size),  
-                         mode='bilinear', align_corners=False)  
-        
+        x = F.interpolate(x, size=(7, 7), mode='bilinear', align_corners=False)  
+
         # 存储辅助特征  
         aux_feature = x if self.use_aux_loss else None  
         
         # 解码器路径  
-        x = self.up1(x)  
-        x = self.up2(x)  
-        x = self.up3(x)  
-        x = self.up4(x)  
-        x = self.up_final(x)  
+        x = self.up1(x)     # 7->14  
+        x = self.up2(x)     # 14->28  
+        x = self.up3(x)     # 28->56  
+        x = self.up4(x)     # 56->112  
+        x = self.up5(x)     # 112->224  
         
         # 生成输出  
-        outputs = {'main': self.final_conv(x)}  
+        outputs = {'main': self.final_conv(x)}  # 224x224  
         
         # 添加辅助输出  
         if self.use_aux_loss and aux_feature is not None:  
@@ -211,6 +175,40 @@ class RemoteClipUNet(nn.Module):
                 f"期望输入尺寸为{self.input_size}x{self.input_size}，"  
                 f"实际获得{x.shape[2]}x{x.shape[3]}"  
             )  
+        
+    def _init_clip_model(self, model_name, ckpt_path):  
+        """初始化CLIP模型"""  
+        try:  
+            device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')  
+            model, _, self.preprocess_func = open_clip.create_model_and_transforms(  
+                model_name,  
+                device=device  
+            )  
+            
+            if ckpt_path:  
+                ckpt = torch.load(ckpt_path, map_location='cpu')  
+                model.load_state_dict(ckpt)  
+            
+            self.visual_encoder = model.visual.float()  
+            
+            # 冻结CLIP参数  
+            for param in self.visual_encoder.parameters():  
+                param.requires_grad = False  
+                
+        except Exception as e:  
+            raise RuntimeError(f"CLIP模型加载失败: {str(e)}")  
+        
+    def initialize_weights(self):  
+        """初始化模型权重"""  
+        for m in self.modules():  
+            if isinstance(m, (nn.Conv2d, nn.ConvTranspose2d)):  
+                if m not in self.visual_encoder.modules():  # 跳过CLIP模型的权重  
+                    nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')  
+                    if m.bias is not None:  
+                        nn.init.constant_(m.bias, 0)  
+            elif isinstance(m, nn.BatchNorm2d):  
+                nn.init.constant_(m.weight, 1)  
+                nn.init.constant_(m.bias, 0)  
 
 class SegmentationLoss:  
     """分割损失函数"""  

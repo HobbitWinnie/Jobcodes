@@ -27,48 +27,67 @@ def setup_logging(log_dir: str = None):
         )
         logger.addHandler(file_handler)
 
-class CombinedLoss(nn.Module):
-    """组合损失函数：CrossEntropy + Dice Loss"""
+class CombinedLoss(nn.Module):  
+    """增强的组合损失函数：处理主输出和辅助输出"""  
     
-    def __init__(self, weights: List[float] = [0.5, 0.5], ignore_index: int = 0):
-        super().__init__()
-        self.ce = nn.CrossEntropyLoss(ignore_index=ignore_index)
-        self.weights = weights
-        self.ignore_index = ignore_index
+    def __init__(self,   
+                 weights: List[float] = [0.5, 0.5],   
+                 ignore_index: int = 0,  
+                 aux_weight: float = 0.4):  
+        super().__init__()  
+        self.ce = nn.CrossEntropyLoss(ignore_index=ignore_index)  
+        self.weights = weights  
+        self.ignore_index = ignore_index  
+        self.aux_weight = aux_weight  
     
-    def forward(self, pred: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
-        ce_loss = self.ce(pred, target)
+    def forward(self, outputs: Dict[str, torch.Tensor], target: torch.Tensor) -> Dict[str, torch.Tensor]:  
+        losses = {}  
         
-        pred_soft = F.softmax(pred, dim=1)
-        dice_loss = 1 - dice_coefficient(pred_soft, target, self.ignore_index)
+        # 处理主输出的损失  
+        main_pred = outputs['main']  
+        ce_loss = self.ce(main_pred, target)  
+        pred_soft = F.softmax(main_pred, dim=1)  
+        dice_loss = 1 - dice_coefficient(pred_soft, target, self.ignore_index)  
+        main_loss = self.weights[0] * ce_loss + self.weights[1] * dice_loss  
+        losses['main'] = main_loss  
         
-        return self.weights[0] * ce_loss + self.weights[1] * dice_loss
-
-def dice_coefficient(
-    pred: torch.Tensor,
-    target: torch.Tensor,
-    ignore_index: int = 0,
-    smooth: float = 1e-8
-) -> torch.Tensor:
-    """计算Dice系数"""
-    num_classes = pred.size(1)
-    target_one_hot = F.one_hot(target, num_classes).permute(0, 3, 1, 2)
-    
-    dice_scores = []
-    for cls in range(num_classes):
-        if cls == ignore_index:
-            continue
+        # 如果有辅助输出，计算辅助损失  
+        if 'aux' in outputs:  
+            aux_pred = outputs['aux']  
+            aux_ce_loss = self.ce(aux_pred, target)  
+            aux_pred_soft = F.softmax(aux_pred, dim=1)  
+            aux_dice_loss = 1 - dice_coefficient(aux_pred_soft, target, self.ignore_index)  
+            aux_loss = self.weights[0] * aux_ce_loss + self.weights[1] * aux_dice_loss  
+            losses['aux'] = aux_loss  
             
-        pred_cls = pred[:, cls]
-        target_cls = target_one_hot[:, cls].float()
-        
-        intersection = (pred_cls * target_cls).sum()
-        union = pred_cls.sum() + target_cls.sum()
-        
-        dice = (2.0 * intersection + smooth) / (union + smooth)
-        dice_scores.append(dice)
-        
-    return torch.mean(torch.stack(dice_scores))
+            # 计算总损失  
+            losses['total'] = main_loss + self.aux_weight * aux_loss  
+        else:  
+            losses['total'] = main_loss  
+            
+        return losses  
+
+def dice_coefficient(pred: torch.Tensor, target: torch.Tensor, ignore_index: int = 0) -> torch.Tensor:  
+    """计算Dice系数"""  
+    smooth = 1e-6  
+    
+    # 创建ignore_index的mask  
+    mask = (target != ignore_index)  
+    
+    # 将target转换为one-hot编码  
+    num_classes = pred.size(1)  
+    target_one_hot = F.one_hot(target, num_classes).permute(0, 3, 1, 2).float()  
+    
+    # 应用mask  
+    pred = pred * mask.unsqueeze(1)  
+    target_one_hot = target_one_hot * mask.unsqueeze(1)  
+    
+    # 计算Dice系数  
+    intersection = (pred * target_one_hot).sum(dim=(2, 3))  
+    union = (pred + target_one_hot).sum(dim=(2, 3))  
+    
+    dice = (2. * intersection + smooth) / (union + smooth)  
+    return dice.mean(dim=1).mean()  # 在batch和类别维度上取平均
 
 def load_and_save_data(image_path, label_path, output_dir, normalize = True):  
     """  
@@ -239,3 +258,39 @@ def set_random_seed(seed: int):
         torch.cuda.manual_seed_all(seed)
         torch.backends.cudnn.deterministic = True
         torch.backends.cudnn.benchmark = False
+
+class EarlyStopping:
+    """早停机制
+    
+    Args:
+        patience (int): 容忍多少个epoch指标没有改善
+        mode (str): 'min' 或 'max'，监控指标是要最小化还是最大化
+        min_delta (float): 最小改善阈值
+    """
+    def __init__(self, patience=7, mode='max', min_delta=0):
+        self.patience = patience
+        self.mode = mode
+        self.min_delta = min_delta
+        self.counter = 0
+        self.best_score = None
+        self.early_stop = False
+
+    def __call__(self, score):
+        if self.best_score is None:
+            self.best_score = score
+            return False
+
+        if self.mode == 'max':
+            improvement = score - self.best_score > self.min_delta
+        else:
+            improvement = self.best_score - score > self.min_delta
+
+        if improvement:
+            self.best_score = score
+            self.counter = 0
+        else:
+            self.counter += 1
+            if self.counter >= self.patience:
+                self.early_stop = True
+
+        return self.early_stop
