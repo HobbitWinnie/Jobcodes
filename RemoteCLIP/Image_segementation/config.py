@@ -41,7 +41,7 @@ class Config:
             },  
             'training': {  
                 'epochs': 2000,  
-                'batch_size': 192,  
+                'batch_size': 64,  
                 'learning_rate': 5e-3,  
                 'min_lr': 1e-6,  
                 'weight_decay': 0.001,  

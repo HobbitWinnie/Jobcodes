@@ -1,9 +1,10 @@
 import numpy as np  
 import torch  
 import random  
-from typing import Tuple, List, Optional, Union, Dict
 from torch.utils.data import Dataset, DataLoader, random_split  
 import random  
+from torch.utils.data.distributed import DistributedSampler  
+
 
 class RemoteSensingDataset(Dataset):  
     """遥感影像数据集"""  
@@ -76,7 +77,8 @@ def validate_labels(labels: torch.Tensor, num_classes: int = 9) -> None:
 
 
 def create_dataloaders(image, labels, patch_size, num_patches, batch_size,  
-                      train_ratio=0.8, num_workers=4, preprocess_func=None):  
+                      train_ratio=0.8, num_workers=4, preprocess_func=None,
+                      rank=0, world_size=1):  
     """创建训练和验证数据加载器"""  
     dataset = RemoteSensingDataset(  
         image=image,  
@@ -89,8 +91,29 @@ def create_dataloaders(image, labels, patch_size, num_patches, batch_size,
     # 划分数据集  
     train_size = int(train_ratio * len(dataset))  
     val_size = len(dataset) - train_size  
-    train_dataset, val_dataset = random_split(dataset, [train_size, val_size])  
-
+    train_dataset, val_dataset = random_split(  
+        dataset,   
+        [train_size, val_size],  
+        generator=torch.Generator().manual_seed(42)  # 确保所有进程使用相同的划分  
+    )  
+    
+    # 创建分布式采样器  
+    train_sampler = DistributedSampler(  
+        train_dataset,  
+        num_replicas=world_size,  
+        rank=rank,  
+        shuffle=True,  
+        seed=42  
+    )  
+    
+    val_sampler = DistributedSampler(  
+        val_dataset,  
+        num_replicas=world_size,  
+        rank=rank,  
+        shuffle=False,  
+        seed=42  
+    )  
+    
     # 创建数据加载器  
     loader_kwargs = {  
         'batch_size': batch_size,  
@@ -98,9 +121,19 @@ def create_dataloaders(image, labels, patch_size, num_patches, batch_size,
         'pin_memory': True  
     }  
 
-    train_loader = DataLoader(train_dataset, shuffle=True, **loader_kwargs)  
-    val_loader = DataLoader(val_dataset, shuffle=False, **loader_kwargs) 
+    # 创建训练和验证数据加载器  
+    train_loader = DataLoader(  
+        train_dataset,  
+        sampler=train_sampler,  # 使用分布式采样器  
+        **loader_kwargs  
+    )  
     
+    val_loader = DataLoader(  
+        val_dataset,  
+        sampler=val_sampler,  # 使用分布式采样器  
+        **loader_kwargs  
+    )  
+
     return train_loader, val_loader
 
 def split_image_into_patches(image, patch_size=256, overlap=128, preprocess_func=None):  
