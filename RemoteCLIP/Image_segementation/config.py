@@ -50,7 +50,7 @@ class Config:
                 'patience': 100,  
                 'clip_grad_norm': 1.0,  
                 'ignore_index': 0,
-                'val_frequency': 10
+                'val_frequency': 5
             }  
         }  
         

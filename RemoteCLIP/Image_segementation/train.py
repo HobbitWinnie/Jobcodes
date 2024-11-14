@@ -14,7 +14,6 @@ import json
 import torch.nn as nn
 import torch.nn.functional as F
 
-
 from utils import (
     load_and_save_data, 
     calculate_metrics, 
@@ -23,149 +22,41 @@ from utils import (
 )
 from dataset import create_dataloaders
 from model import RemoteClipUNet
-from config import get_config, setup_device, setup_logging
+from config import get_config, setup_logging
 
 class CombinedLoss(nn.Module):  
-    """增强的组合损失函数：处理所有输出并确保梯度传播"""  
-
-    def __init__(self, weights=[0.5, 0.5], ignore_index=0, aux_weight=0.4):  
+    def __init__(self, weights=[0.5, 0.5], ignore_index=0):  
         super().__init__()  
-        self.ce = nn.CrossEntropyLoss(ignore_index=ignore_index)  
         self.weights = weights  
         self.ignore_index = ignore_index  
-        self.aux_weight = aux_weight  
-        
-        # 添加调试日志  
-        logging.info(f"Initializing CombinedLoss with weights={weights}, "  
-                    f"ignore_index={ignore_index}, aux_weight={aux_weight}")  
+        self.ce = nn.CrossEntropyLoss(ignore_index=ignore_index)  
 
-    def compute_single_output_loss(self, pred, target, name=""):  
-        """计算单个输出的损失"""  
-        # 确保输入是有效的张量  
-        assert torch.is_tensor(pred), f"Prediction {name} must be a tensor"  
-        assert torch.is_tensor(target), f"Target must be a tensor"  
+    def dice_loss(self, pred, target):  
+        # 计算dice loss  
+        pred = F.softmax(pred, dim=1)  
+        target_one_hot = F.one_hot(target, num_classes=pred.shape[1]).permute(0, 3, 1, 2)  
         
-        # 记录shapes用于调试  
-        if name:  
-            logging.debug(f"{name} shapes - pred: {pred.shape}, target: {target.shape}")  
-
-        # 计算交叉熵损失  
-        ce_loss = self.ce(pred, target)  
+        # 忽略特定类别  
+        mask = (target != self.ignore_index).float()  
+        pred = pred * mask.unsqueeze(1)  
+        target_one_hot = target_one_hot.float() * mask.unsqueeze(1)  
         
-        # 计算Dice损失  
-        pred_soft = F.softmax(pred, dim=1)  
-        dice_loss = 1 - dice_coefficient(pred_soft, target, self.ignore_index)  
+        # 计算dice系数  
+        intersection = (pred * target_one_hot).sum(dim=(2, 3))  
+        union = pred.sum(dim=(2, 3)) + target_one_hot.sum(dim=(2, 3)) + 1e-7  
         
-        # 确保dice_loss是标量张量  
-        if not torch.is_tensor(dice_loss):  
-            dice_loss = torch.tensor(dice_loss, device=pred.device, dtype=pred.dtype)  
-        
-        # 组合损失  
-        combined_loss = self.weights[0] * ce_loss + self.weights[1] * dice_loss  
-        
-        # 返回损失和详细指标  
-        metrics = {  
-            f"{name}_ce_loss": ce_loss.item(),  
-            f"{name}_dice_loss": dice_loss.item(),  
-            f"{name}_combined_loss": combined_loss.item()  
-        }  
-        
-        return combined_loss, metrics  
+        return 1 - (2. * intersection / union).mean()  
 
     def forward(self, outputs, target):  
-        """前向传播计算损失"""  
-        losses = {}  
-        metrics = {}  
-        total_loss = 0.0  
-
-        # 确保输入是字典  
-        if not isinstance(outputs, dict):  
-            raise ValueError("Expected outputs to be a dictionary")  
-
-        # 处理主输出的损失  
-        if 'main' not in outputs:  
-            raise ValueError("Main output not found in model outputs")  
+        if isinstance(outputs, dict):  
+            pred = outputs['main']  
+        else:  
+            pred = outputs  
             
-        main_loss, main_metrics = self.compute_single_output_loss(  
-            outputs['main'], target, "main"  
-        )  
-        losses['main'] = main_loss  
-        metrics.update(main_metrics)  
-        total_loss = main_loss  
-
-        # 处理辅助输出的损失  
-        if 'aux' in outputs:  
-            aux_loss, aux_metrics = self.compute_single_output_loss(  
-                outputs['aux'], target, "aux"  
-            )  
-            losses['aux'] = aux_loss  
-            metrics.update(aux_metrics)  
-            total_loss = total_loss + self.aux_weight * aux_loss  
-
-        # 处理其他输出，确保梯度流动  
-        for key, value in outputs.items():  
-            if key not in ['main', 'aux']:  
-                if torch.is_tensor(value) and value.requires_grad:  
-                    # 添加一个小的损失确保梯度流动  
-                    dummy_loss = value.mean() * 0.0  
-                    losses[f'dummy_{key}'] = dummy_loss  
-                    total_loss = total_loss + dummy_loss  
-
-        # 记录总损失  
-        losses['total'] = total_loss  
-        metrics['total_loss'] = total_loss.item()  
-
-        # 输出详细的调试信息  
-        logging.debug(f"Loss metrics: {metrics}")  
+        ce_loss = self.ce(pred, target)  
+        dice = self.dice_loss(pred, target)  
         
-        # 验证所有损失都是有效的张量  
-        for name, loss in losses.items():  
-            if not torch.is_tensor(loss):  
-                raise ValueError(f"Loss {name} is not a tensor: {type(loss)}")  
-            if torch.isnan(loss):  
-                raise ValueError(f"Loss {name} is NaN")  
-            if torch.isinf(loss):  
-                raise ValueError(f"Loss {name} is Inf")  
-
-        return losses
-def dice_coefficient(pred: torch.Tensor,   
-                    target: torch.Tensor,   
-                    ignore_index: int = 0,   
-                    epsilon: float = 1e-6) -> torch.Tensor:  
-    """  
-    计算Dice系数  
-    Args:  
-        pred: (B, C, H, W) softmax后的预测  
-        target: (B, H, W) 目标  
-        ignore_index: 忽略的类别索引  
-        epsilon: 防止除零的小值  
-    """  
-    # 确保输入维度正确  
-    assert pred.dim() == 4, f"Prediction must be 4D (B,C,H,W), got {pred.dim()}D"  
-    assert target.dim() == 3, f"Target must be 3D (B,H,W), got {target.dim()}D"  
-    
-    # 获取维度信息  
-    b, c, h, w = pred.size()  
-    
-    # 转换target为one-hot编码  
-    target_one_hot = F.one_hot(target, num_classes=c).permute(0, 3, 1, 2).float()  
-    
-    # 创建mask忽略特定类别  
-    mask = (target != ignore_index).float().unsqueeze(1).expand_as(pred)  
-    
-    # 应用mask  
-    pred = pred * mask  
-    target_one_hot = target_one_hot * mask  
-    
-    # 计算交集和并集  
-    intersection = (pred * target_one_hot).sum(dim=(2, 3))  
-    union = pred.sum(dim=(2, 3)) + target_one_hot.sum(dim=(2, 3))  
-    
-    # 计算每个类别的dice系数  
-    dice = (2. * intersection + epsilon) / (union + epsilon)  
-    
-    # 返回所有类别的平均dice系数（忽略背景类）  
-    return dice[:, 1:].mean()  # 忽略背景类（假设在索引0）  
+        return self.weights[0] * ce_loss + self.weights[1] * dice
 
 def setup(rank, world_size):
     """初始化分布式环境"""
@@ -225,7 +116,6 @@ def init_training(rank, world_size, config, image, labels):
     criterion = CombinedLoss(  
         weights=config['training'].get('loss_weights', [0.5, 0.5]),  
         ignore_index=config['training'].get('ignore_index', 0),  
-        aux_weight=0.4  
     ).to(rank)  
 
     return model, optimizer, scheduler, criterion, train_loader, val_loader  
@@ -246,22 +136,12 @@ def train_epoch(model, train_loader, optimizer, criterion, scaler, rank, world_s
             loss = criterion(outputs, masks)  
 
         optimizer.zero_grad(set_to_none=True)  
-        scaler.scale(loss['total']).backward()  
-
-        if config['training']['clip_grad_norm'] > 0:  
-            scaler.unscale_(optimizer)  
-            torch.nn.utils.clip_grad_norm_(  
-                model.parameters(),  
-                config['training']['clip_grad_norm']  
-            )  
-
+        scaler.scale(loss).backward()  
         scaler.step(optimizer)  
         scaler.update()  
 
         # 同步损失  
-        loss_value = loss['total'].item()  
-        dist.all_reduce(torch.tensor(loss_value).to(rank))  
-        epoch_loss += loss_value / world_size  
+        epoch_loss += loss.item()   
         batch_count += 1  
 
     avg_loss = epoch_loss / batch_count  
@@ -285,8 +165,14 @@ def validate(model, val_loader, criterion, rank, world_size, config):
             loss = criterion(outputs, masks)  
             val_loss += loss['total'].item()  
 
+            # 计算指标时使用主输出  
+            if isinstance(outputs, dict):  
+                pred = outputs['main']  
+            else:  
+                pred = outputs  
+                
             batch_metrics = calculate_metrics(  
-                outputs['main'],  
+                pred,  
                 masks,  
                 num_classes=config['dataset']['num_classes']  
             )  
@@ -295,15 +181,10 @@ def validate(model, val_loader, criterion, rank, world_size, config):
             val_metrics['mean_iou'] += batch_metrics['mean_iou']  
             val_batches += 1  
 
-    # 同步验证结果  
-    val_loss = torch.tensor(val_loss).to(rank)  
-    dist.all_reduce(val_loss)  
-    val_loss = (val_loss.item() / val_batches) / world_size  
-
-    for key in val_metrics:  
-        metric_tensor = torch.tensor(val_metrics[key]).to(rank)  
-        dist.all_reduce(metric_tensor)  
-        val_metrics[key] = (metric_tensor.item() / val_batches) / world_size  
+    # 计算平均值  
+    val_loss /= val_batches  
+    val_metrics['accuracy'] /= val_batches  
+    val_metrics['mean_iou'] /= val_batches  
 
     return val_loss, val_metrics  
 

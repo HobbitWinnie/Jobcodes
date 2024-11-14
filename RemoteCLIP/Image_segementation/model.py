@@ -262,20 +262,3 @@ class RemoteClipUNet(nn.Module):
             elif isinstance(m, nn.BatchNorm2d):  
                 nn.init.constant_(m.weight, 1)  
                 nn.init.constant_(m.bias, 0)
-
-class SegmentationLoss:  
-    """分割损失函数"""  
-    def __init__(self, aux_weight=0.4, ignore_index=255):  
-        self.aux_weight = aux_weight  
-        self.criterion = nn.CrossEntropyLoss(ignore_index=ignore_index)  
-    
-    def __call__(self, outputs, target):  
-        losses = {'main': self.criterion(outputs['main'], target)}  
-        
-        if 'aux' in outputs:  
-            losses['aux'] = self.criterion(outputs['aux'], target)  
-            losses['total'] = losses['main'] + self.aux_weight * losses['aux']  
-        else:  
-            losses['total'] = losses['main']  
-            
-        return losses  
