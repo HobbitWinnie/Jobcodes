@@ -381,3 +381,60 @@ class EarlyStopping:
                 self.early_stop = True
 
         return self.early_stop
+    
+class CombinedLoss(nn.Module):  
+    def __init__(self, weights=[0.5, 0.5], ignore_index=0):  
+        super().__init__()  
+        self.weights = weights  
+        self.ignore_index = ignore_index  
+        self.ce = nn.CrossEntropyLoss(ignore_index=ignore_index)  
+
+    def dice_loss(self, pred, target):  
+        # 限制输入值范围，提高数值稳定性  
+        pred = torch.clamp(pred, min=-1e6, max=1e6)  
+        
+        # 应用softmax  
+        pred = F.softmax(pred, dim=1)  
+        
+        # 确保pred在有效范围内  
+        pred = torch.clamp(pred, min=1e-7, max=1.0)  
+        
+        # 创建one-hot编码  
+        target_one_hot = F.one_hot(target, num_classes=pred.shape[1]).permute(0, 3, 1, 2).float()  
+        
+        # 创建mask  
+        mask = (target != self.ignore_index).float()  
+        pred = pred * mask.unsqueeze(1)  
+        target_one_hot = target_one_hot * mask.unsqueeze(1)  
+        
+        # 计算dice系数  
+        intersection = (pred * target_one_hot).sum(dim=(2, 3))  
+        denominator = pred.sum(dim=(2, 3)) + target_one_hot.sum(dim=(2, 3))  
+        
+        # 添加平滑项  
+        epsilon = 1e-6  
+        dice = (2. * intersection + epsilon) / (denominator + epsilon)  
+        
+        return 1 - dice.mean()  
+
+    def forward(self, outputs, target):  
+        if isinstance(outputs, dict):  
+            pred = outputs['main']  
+        else:  
+            pred = outputs  
+            
+        # 计算cross entropy loss  
+        ce_loss = self.ce(pred, target)  
+        
+        # 计算dice loss  
+        dice = self.dice_loss(pred, target)  
+        
+        # 组合损失  
+        total_loss = self.weights[0] * ce_loss + self.weights[1] * dice  
+        
+        # 确保损失值有效  
+        if not torch.isfinite(total_loss):  
+            # 如果损失无效，只返回CE loss  
+            return ce_loss  
+            
+        return total_loss

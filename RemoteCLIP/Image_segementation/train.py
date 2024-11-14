@@ -17,47 +17,15 @@ import torch.nn.functional as F
 from utils import (
     load_and_save_data, 
     calculate_metrics, 
-    # CombinedLoss, 
+    CombinedLoss, 
     EarlyStopping
 )
 from dataset import create_dataloaders
 from model import RemoteClipUNet
 from config import get_config, setup_logging
 
-class CombinedLoss(nn.Module):  
-    def __init__(self, weights=[0.5, 0.5], ignore_index=0):  
-        super().__init__()  
-        self.weights = weights  
-        self.ignore_index = ignore_index  
-        self.ce = nn.CrossEntropyLoss(ignore_index=ignore_index)  
 
-    def dice_loss(self, pred, target):  
-        # 计算dice loss  
-        pred = F.softmax(pred, dim=1)  
-        target_one_hot = F.one_hot(target, num_classes=pred.shape[1]).permute(0, 3, 1, 2)  
-        
-        # 忽略特定类别  
-        mask = (target != self.ignore_index).float()  
-        pred = pred * mask.unsqueeze(1)  
-        target_one_hot = target_one_hot.float() * mask.unsqueeze(1)  
-        
-        # 计算dice系数  
-        intersection = (pred * target_one_hot).sum(dim=(2, 3))  
-        union = pred.sum(dim=(2, 3)) + target_one_hot.sum(dim=(2, 3)) + 1e-7  
-        
-        return 1 - (2. * intersection / union).mean()  
-
-    def forward(self, outputs, target):  
-        if isinstance(outputs, dict):  
-            pred = outputs['main']  
-        else:  
-            pred = outputs  
-            
-        ce_loss = self.ce(pred, target)  
-        dice = self.dice_loss(pred, target)  
-        
-        return self.weights[0] * ce_loss + self.weights[1] * dice
-
+    
 def setup(rank, world_size):
     """初始化分布式环境"""
     os.environ['MASTER_ADDR'] = '127.0.0.1'  
@@ -163,7 +131,7 @@ def validate(model, val_loader, criterion, rank, world_size, config):
 
             outputs = model(images)  
             loss = criterion(outputs, masks)  
-            val_loss += loss['total'].item()  
+            val_loss += loss.item()  
 
             # 计算指标时使用主输出  
             if isinstance(outputs, dict):  
