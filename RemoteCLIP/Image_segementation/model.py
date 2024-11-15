@@ -154,67 +154,75 @@ class RemoteClipUNet(nn.Module):
 
         # self.initialize_weights()  
 
-    @torch.cuda.amp.autocast()  
+    def extract_features(self, x):  
+        """单独的特征提取方法"""  
+        with torch.no_grad():  
+            # 确保在评估模式  
+            self.visual_encoder.eval()  
+            # 使用FP32进行CLIP推理  
+            with torch.cuda.amp.autocast(enabled=False):  
+                visual_features = self.visual_encoder(x)  
+        return visual_features  
+
     def forward(self, x):  
         """前向传播"""  
-
         # 输入验证  
         self._validate_input(x)  
 
         # CLIP特征提取  
-        with torch.no_grad():  
-            visual_features = self.visual_encoder(x)  
+        visual_features = self.extract_features(x)  
 
-        # 特征重塑和转换  
-        B, D = visual_features.shape  
-        x = visual_features.reshape(B, D, 1, 1)  
-        x = self.feature_transform(x)  
-        # 将特征图调整到7x7  
-        x = F.interpolate(x, size=(7, 7), mode='bilinear', align_corners=False)  
+        # 使用autocast进行后续处理  
+        with torch.cuda.amp.autocast():  
+            # 特征重塑和转换  
+            B, D = visual_features.shape  
+            x = visual_features.reshape(B, D, 1, 1)  
+            x = self.feature_transform(x)  
+            # 将特征图调整到7x7  
+            x = F.interpolate(x, size=(7, 7), mode='bilinear', align_corners=False)  
 
-        # 应用空间注意力  
-        attention_weights = self.spatial_attention(x)  
-        x = x * attention_weights  
+            # 应用空间注意力  
+            attention_weights = self.spatial_attention(x)  
+            x = x * attention_weights  
 
-        # 存储用于辅助损失的特征  
-        aux_feature = x.clone() if self.use_aux_loss else None  
+            # 存储用于辅助损失的特征  
+            aux_feature = x.clone() if self.use_aux_loss else None  
 
-        # 解码器路径  
-        intermediate_features = []  
-        for decoder_block in self.decoder_blocks:  
-            x = decoder_block(x)  
-            intermediate_features.append(x)  
+            # 解码器路径  
+            intermediate_features = []  
+            for decoder_block in self.decoder_blocks:  
+                x = decoder_block(x)  
+                intermediate_features.append(x)  
 
-        # 生成主输出  
-        # main_output = self.final_conv(x)  
-        main_output = self.final_conv(intermediate_features[-1])  
-        outputs = {'main': main_output}  
+            # 生成主输出  
+            main_output = self.final_conv(intermediate_features[-1])  
+            outputs = {'main': main_output}  
 
-        # 生成辅助输出  
-        if self.use_aux_loss and aux_feature is not None:  
-            aux_output = self.aux_head(aux_feature)  
-            outputs['aux'] = F.interpolate(  
-                aux_output,  
-                size=(self.input_size, self.input_size),  
-                mode='bilinear',  
-                align_corners=False  
-            )  
-           
-            # 添加深度监督  
-            for idx, feat in enumerate(intermediate_features[:-1]):  
-                aux_out = nn.Conv2d(feat.shape[1], self.num_classes, 1).to(feat.device)(feat)  
-                outputs[f'aux_{idx}'] = F.interpolate(  
-                    aux_out,  
+            # 生成辅助输出  
+            if self.use_aux_loss and aux_feature is not None:  
+                aux_output = self.aux_head(aux_feature)  
+                outputs['aux'] = F.interpolate(  
+                    aux_output,  
                     size=(self.input_size, self.input_size),  
                     mode='bilinear',  
                     align_corners=False  
                 )  
-        
-        # 确保所有输出都参与计算  
-        dummy_sum = sum([output.mean() * 0 for output in outputs.values()])  
-        outputs['main'] = outputs['main'] + dummy_sum  
+               
+                # 添加深度监督  
+                for idx, feat in enumerate(intermediate_features[:-1]):  
+                    aux_out = nn.Conv2d(feat.shape[1], self.num_classes, 1).to(feat.device)(feat)  
+                    outputs[f'aux_{idx}'] = F.interpolate(  
+                        aux_out,  
+                        size=(self.input_size, self.input_size),  
+                        mode='bilinear',  
+                        align_corners=False  
+                    )  
+            
+            # 确保所有输出都参与计算  
+            dummy_sum = sum([output.mean() * 0 for output in outputs.values()])  
+            outputs['main'] = outputs['main'] + dummy_sum  
 
-        return outputs  
+            return outputs  
 
     def _validate_input(self, x):  
         """验证输入数据"""  
@@ -228,6 +236,14 @@ class RemoteClipUNet(nn.Module):
                 f"实际获得{x.shape[2]}x{x.shape[3]}"  
             )  
 
+    def train(self, mode=True):  
+        """重写训练模式切换方法"""  
+        super().train(mode)  
+        # 确保CLIP模型始终在评估模式  
+        if hasattr(self, 'visual_encoder'):  
+            self.visual_encoder.eval()  
+        return self  
+    
     def _init_clip_model(self, model_name, ckpt_path):  
         """初始化CLIP模型"""  
         try:  
@@ -243,7 +259,8 @@ class RemoteClipUNet(nn.Module):
                 model.load_state_dict(ckpt)  
 
             self.visual_encoder = model.visual.float()  
-            
+            self.visual_encoder.eval()  
+
             # 冻结CLIP参数  
             for param in self.visual_encoder.parameters():  
                 param.requires_grad = False  
