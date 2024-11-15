@@ -383,58 +383,145 @@ class EarlyStopping:
         return self.early_stop
     
 class CombinedLoss(nn.Module):  
-    def __init__(self, weights=[0.5, 0.5], ignore_index=0):  
+    def __init__(self, weights=[0.5, 0.5], ignore_index=0, smooth=1e-5):  
         super().__init__()  
         self.weights = weights  
         self.ignore_index = ignore_index  
-        self.ce = nn.CrossEntropyLoss(ignore_index=ignore_index)  
+        self.smooth = smooth  
+        self.ce_loss = nn.CrossEntropyLoss(  
+            ignore_index=ignore_index,  
+            reduction='none'  # 使用none减少让我们能手动处理权重  
+        )  
+
+    def calculate_weights(self, target):  
+        """计算像素级权重来平衡有效和无效像素"""  
+        valid_mask = target != self.ignore_index  
+        valid_pixels = valid_mask.sum()  
+        total_pixels = valid_mask.numel()  
+        valid_ratio = valid_pixels / total_pixels  
+        
+        # # 记录详细信息  
+        # print(f"\nLoss weight calculation:")  
+        # print(f"Valid pixels: {valid_pixels}")  
+        # print(f"Total pixels: {total_pixels}")  
+        # print(f"Valid ratio: {valid_ratio:.4f}")  
+        
+        # 根据有效像素比例动态调整权重  
+        if valid_ratio < 0.3:  # 如果有效像素过少  
+            weight_valid = 1.0  
+            weight_invalid = 0.1  
+            # print(f"警告：有效像素比例过低 ({valid_ratio:.2%})，调整权重")  
+        else:  
+            weight_valid = 1.0  
+            weight_invalid = 0.5  
+            
+        weights = torch.ones_like(target, dtype=torch.float32)  
+        weights[valid_mask] = weight_valid  
+        weights[~valid_mask] = weight_invalid  
+        
+        return weights  
 
     def dice_loss(self, pred, target):  
-        # 限制输入值范围，提高数值稳定性  
-        pred = torch.clamp(pred, min=-1e6, max=1e6)  
+        """改进的Dice损失"""  
+        # 输入检查和日志  
+        # print(f"\nDice Loss Calculation:")  
+        # print(f"Input pred shape: {pred.shape}, target shape: {target.shape}")  
+        # print(f"Pred range: [{pred.min():.4f}, {pred.max():.4f}]")  
+        
+        batch_size = pred.size(0)  
+        num_classes = pred.size(1)  
         
         # 应用softmax  
         pred = F.softmax(pred, dim=1)  
+        # print(f"After softmax range: [{pred.min():.4f}, {pred.max():.4f}]")  
         
-        # 确保pred在有效范围内  
-        pred = torch.clamp(pred, min=1e-7, max=1.0)  
+        # 将目标转换为one-hot编码  
+        target_one_hot = F.one_hot(  
+            target, num_classes=num_classes  
+        ).permute(0, 3, 1, 2).float()  
         
-        # 创建one-hot编码  
-        target_one_hot = F.one_hot(target, num_classes=pred.shape[1]).permute(0, 3, 1, 2).float()  
+        # 创建有效像素掩码  
+        valid_mask = (target != self.ignore_index).unsqueeze(1)  
+        valid_mask = valid_mask.expand(-1, num_classes, -1, -1)  
         
-        # 创建mask  
-        mask = (target != self.ignore_index).float()  
-        pred = pred * mask.unsqueeze(1)  
-        target_one_hot = target_one_hot * mask.unsqueeze(1)  
+        # 应用掩码  
+        pred = pred * valid_mask.float()  
+        target_one_hot = target_one_hot * valid_mask.float()  
         
-        # 计算dice系数  
+        # 计算每个类别的Dice系数  
         intersection = (pred * target_one_hot).sum(dim=(2, 3))  
         denominator = pred.sum(dim=(2, 3)) + target_one_hot.sum(dim=(2, 3))  
         
-        # 添加平滑项  
-        epsilon = 1e-6  
-        dice = (2. * intersection + epsilon) / (denominator + epsilon)  
+        # # 数值稳定性检查  
+        # print(f"Intersection range: [{intersection.min():.4f}, {intersection.max():.4f}]")  
+        # print(f"Denominator range: [{denominator.min():.4f}, {denominator.max():.4f}]")  
         
-        return 1 - dice.mean()  
+        # 添加平滑项并计算损失  
+        dice_coef = (2 * intersection + self.smooth) / (denominator + self.smooth)  
+        dice_loss = 1 - dice_coef.mean()  
+        
+        # print(f"Final dice loss: {dice_loss:.4f}")  
+        return dice_loss  
 
-    def forward(self, outputs, target):  
-        if isinstance(outputs, dict):  
-            pred = outputs['main']  
+    def forward(self, pred_dict, target):  
+        """处理字典类型的预测输出"""  
+        # 提取主要预测结果  
+        if isinstance(pred_dict, dict):  
+            pred = pred_dict['main'] if 'main' in pred_dict else pred_dict['out']  
         else:  
-            pred = outputs  
-            
-        # 计算cross entropy loss  
-        ce_loss = self.ce(pred, target)  
+            pred = pred_dict  
         
-        # 计算dice loss  
-        dice = self.dice_loss(pred, target)  
+        # 检查数值  
+        if torch.isnan(pred).any():  
+            logging.warning("预测值中包含NaN!")  
+            pred = torch.nan_to_num(pred, nan=0.0, posinf=1.0, neginf=0.0)  
+        
+        if torch.isinf(pred).any():  
+            logging.warning("预测值中包含Inf!")  
+            pred = torch.nan_to_num(pred, nan=0.0, posinf=1.0, neginf=0.0)  
+
+        # 计算CE损失前进行clamp  
+        pred = torch.clamp(pred, min=-1e7, max=1e7)  
+        
+        # 计算CE损失  
+        ce_loss = self.ce_loss(pred, target)  
+        
+        # 计算像素权重  
+        valid_mask = target != self.ignore_index  
+        pixel_weights = torch.ones_like(target, dtype=torch.float32)  
+        pixel_weights = pixel_weights.to(pred.device)  
+        pixel_weights[~valid_mask] = 0.0  
+        
+        # 应用权重  
+        ce_loss = (ce_loss * pixel_weights).sum() / (pixel_weights.sum() + self.smooth)  
+        
+        # Dice损失计算  
+        pred_probs = F.softmax(pred, dim=1)  
+        
+        # 转换目标为one-hot编码  
+        target_one_hot = F.one_hot(  
+            target,   
+            num_classes=pred.size(1)  
+        ).permute(0, 3, 1, 2).float()  
+        
+        # 应用掩码  
+        pred_probs = pred_probs * valid_mask.unsqueeze(1).float()  
+        target_one_hot = target_one_hot * valid_mask.unsqueeze(1).float()  
+        
+        # 计算Dice  
+        intersection = (pred_probs * target_one_hot).sum((2, 3))  
+        union = pred_probs.sum((2, 3)) + target_one_hot.sum((2, 3))  
+        
+        # 添加平滑项并计算Dice系数  
+        dice = (2.0 * intersection + self.smooth) / (union + self.smooth)  
+        dice_loss = 1.0 - dice.mean()  
         
         # 组合损失  
-        total_loss = self.weights[0] * ce_loss + self.weights[1] * dice  
+        combined_loss = self.weights[0] * ce_loss + self.weights[1] * dice_loss  
         
-        # 确保损失值有效  
-        if not torch.isfinite(total_loss):  
-            # 如果损失无效，只返回CE loss  
-            return ce_loss  
+        # 检查最终损失  
+        if torch.isnan(combined_loss) or torch.isinf(combined_loss):  
+            logging.error(f"损失计算异常! CE Loss: {ce_loss.item()}, Dice Loss: {dice_loss.item()}")  
+            raise ValueError("Loss computation resulted in invalid values")  
             
-        return total_loss
+        return combined_loss  

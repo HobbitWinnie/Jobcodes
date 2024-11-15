@@ -77,9 +77,9 @@ def validate_labels(labels: torch.Tensor, num_classes: int = 9) -> None:
 
 
 def create_dataloaders(image, labels, patch_size, num_patches, batch_size,  
-                      train_ratio=0.8, num_workers=4, preprocess_func=None,
-                      rank=0, world_size=1):  
-    """创建训练和验证数据加载器"""  
+                      train_ratio=0.8, num_workers=4, preprocess_func=None):  
+    """创建训练和验证数据加载器（单GPU版本）"""  
+    # 创建数据集  
     dataset = RemoteSensingDataset(  
         image=image,  
         labels=labels,  
@@ -94,44 +94,30 @@ def create_dataloaders(image, labels, patch_size, num_patches, batch_size,
     train_dataset, val_dataset = random_split(  
         dataset,   
         [train_size, val_size],  
-        generator=torch.Generator().manual_seed(42)  # 确保所有进程使用相同的划分  
+        generator=torch.Generator().manual_seed(42)  # 保持随机种子以确保可重复性  
     )  
     
-    # 创建分布式采样器  
-    train_sampler = DistributedSampler(  
-        train_dataset,  
-        num_replicas=world_size,  
-        rank=rank,  
-        shuffle=True,  
-        seed=42  
-    )  
-    
-    val_sampler = DistributedSampler(  
-        val_dataset,  
-        num_replicas=world_size,  
-        rank=rank,  
-        shuffle=False,  
-        seed=42  
-    )  
-    
-    # 创建数据加载器  
+    # 创建数据加载器的通用参数  
     loader_kwargs = {  
         'batch_size': batch_size,  
         'num_workers': num_workers,  
-        'pin_memory': True  
+        'pin_memory': True,  
+        'shuffle': True  # 训练集需要随机打乱  
     }  
 
-    # 创建训练和验证数据加载器  
+    # 创建训练数据加载器  
     train_loader = DataLoader(  
         train_dataset,  
-        sampler=train_sampler,  # 使用分布式采样器  
         **loader_kwargs  
     )  
     
+    # 验证集不需要随机打乱  
     val_loader = DataLoader(  
         val_dataset,  
-        sampler=val_sampler,  # 使用分布式采样器  
-        **loader_kwargs  
+        batch_size=batch_size,  
+        num_workers=num_workers,  
+        pin_memory=True,  
+        shuffle=False  
     )  
 
     return train_loader, val_loader

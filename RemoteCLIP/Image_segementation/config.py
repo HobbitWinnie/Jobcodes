@@ -42,15 +42,18 @@ class Config:
             'training': {  
                 'epochs': 2000,  
                 'batch_size': 64,  
-                'learning_rate': 5e-3,  
+                'learning_rate': 1e-4,
                 'min_lr': 1e-6,  
                 'weight_decay': 0.001,  
-                'scheduler_T0': 30,  
-                'scheduler_T_mult': 2,  
                 'patience': 100,  
                 'clip_grad_norm': 1.0,  
                 'ignore_index': 0,
-                'val_frequency': 1
+                'val_frequency': 10,
+                'max_grad_norm': 0.5,  # 梯度裁剪阈值  
+                'scheduler_T0': 10,    # CosineAnnealingWarmRestarts的初始周期  
+                'scheduler_T_mult': 2, # 周期倍增因子 
+                'loss_weights': [0.7, 0.3],  # CE损失和Dice损失的权重  
+                'loss_smooth': 1e-5,         # 平滑参数  
             }  
         }  
         
