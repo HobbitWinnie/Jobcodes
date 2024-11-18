@@ -11,10 +11,11 @@ import torch.nn as nn
 import torch.nn.functional as F  
 from torch.cuda.amp import GradScaler, autocast  
 
-from utils import load_and_save_data, calculate_metrics, CombinedLoss, EarlyStopping  
+from utils import load_and_save_data, calculate_metrics, EarlyStopping  
 from dataset import create_dataloaders  
 from model import RemoteClipUNet  
 from config import get_config, setup_logging  
+from CombinedLoss import CombinedLoss
 
 class ModelTrainer:  
     def __init__(self, config):  
@@ -135,7 +136,7 @@ class ModelTrainer:
         total_time = time.time() - start_time  
         print(f"训练环境初始化完成，总耗时: {total_time:.2f}秒")  
 
-    def train_epoch(self):  
+    def train_epoch(self, progress):  
         """训练一个epoch"""  
         self.model.train()  
         epoch_loss = 0  
@@ -158,7 +159,7 @@ class ModelTrainer:
                 # 前向传播（使用autocast） 
                 with autocast():  
                     outputs = self.model(images)  
-                    loss = self.criterion(outputs, masks)  
+                    loss = self.criterion(outputs, masks, progress)[0]   
                 
                 # 检查损失值  
                 if torch.isnan(loss) or torch.isinf(loss):  
@@ -236,7 +237,7 @@ class ModelTrainer:
         
         return epoch_loss / batch_count, time.time() - epoch_start  
     
-    def validate(self):  
+    def validate(self, progress):  
         """验证模型"""  
         self.model.eval()  
         val_loss = 0.0  
@@ -254,7 +255,7 @@ class ModelTrainer:
                 
                 with autocast():  
                     outputs = self.model(images)  
-                    loss = self.criterion(outputs, masks)  
+                    loss = self.criterion(outputs, masks, progress)[0]  
                     val_loss += loss.item()  
                     
                     pred = outputs['main'] if isinstance(outputs, dict) else outputs  
@@ -272,12 +273,6 @@ class ModelTrainer:
             val_loss /= val_batches  
             val_metrics['accuracy'] /= val_batches  
             val_metrics['mean_iou'] /= val_batches  
-            
-            # # 打印详细的验证结果  
-            # print(f"\nValidation Summary:")  
-            # print(f"Average Loss: {val_loss:.4f}")  
-            # print(f"Average Accuracy: {val_metrics['accuracy']:.4f}")  
-            # print(f"Average mIoU: {val_metrics['mean_iou']:.4f}")  
         else:  
             logging.warning("没有成功处理任何验证批次！")  
         
@@ -305,15 +300,18 @@ class ModelTrainer:
             print(f"梯度裁剪阈值: {self.max_grad_norm}")  
             print(f"Ignore index: {self.ignore_index}\n")  
             
-            for epoch in range(self.config['training']['epochs']):  
+            total_epochs = self.config['training']['epochs']
+            
+            for epoch in range(total_epochs):  
                 # 获取当前学习率  
                 current_lr = self.optimizer.param_groups[0]['lr']  
+                progress = (epoch + 1) / total_epochs  
                 
-                avg_loss, epoch_time = self.train_epoch()  
+                avg_loss, epoch_time = self.train_epoch(progress)  
                 self.scheduler.step()  
 
                 if (epoch + 1) % self.config['training']['val_frequency'] == 0:  
-                    val_loss, val_metrics = self.validate() 
+                    val_loss, val_metrics = self.validate(progress) 
 
                     logging.info(  
                         f"Epoch {epoch+1}/{self.config['training']['epochs']} "  

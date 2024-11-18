@@ -152,7 +152,7 @@ class RemoteClipUNet(nn.Module):
                 nn.Conv2d(initial_features * 4, num_classes, 1)  
             )  
 
-        # self.initialize_weights()  
+        self.initialize_weights()  
 
     def extract_features(self, x):  
         """单独的特征提取方法"""  
@@ -268,14 +268,14 @@ class RemoteClipUNet(nn.Module):
         except Exception as e:  
             raise RuntimeError(f"CLIP模型加载失败: {str(e)}")  
 
-    # def initialize_weights(self):  
-    #     """初始化模型权重"""  
-    #     for m in self.modules():  
-    #         if isinstance(m, (nn.Conv2d, nn.ConvTranspose2d)):  
-    #             if m not in self.visual_encoder.modules():  
-    #                 nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')  
-    #                 if m.bias is not None:  
-    #                     nn.init.constant_(m.bias, 0)  
-    #         elif isinstance(m, nn.BatchNorm2d):  
-    #             nn.init.constant_(m.weight, 1)  
-    #             nn.init.constant_(m.bias, 0)
+    def initialize_weights(self):  
+        """初始化模型权重"""  
+        for m in self.modules():  
+            if isinstance(m, (nn.Conv2d, nn.ConvTranspose2d)):  
+                if m not in self.visual_encoder.modules():  
+                    nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')  
+                    if m.bias is not None:  
+                        nn.init.constant_(m.bias, 0)  
+            elif isinstance(m, nn.BatchNorm2d):  
+                nn.init.constant_(m.weight, 1)  
+                nn.init.constant_(m.bias, 0)

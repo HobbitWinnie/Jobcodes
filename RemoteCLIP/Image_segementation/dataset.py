@@ -49,9 +49,9 @@ class RemoteSensingDataset(Dataset):
         # 提取图像块  
         image_patch = self.image[:3, y:y+self.patch_size, x:x+self.patch_size]  
 
-        # 应用预处理  
-        if self.preprocess_func:  
-            image_patch = self.preprocess_func(image_patch)  
+        # # 应用预处理  
+        # if self.preprocess_func:  
+        #     image_patch = self.preprocess_func(image_patch)  
 
         image_patch = torch.from_numpy(image_patch).float()  
 

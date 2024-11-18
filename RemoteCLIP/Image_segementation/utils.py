@@ -393,47 +393,35 @@ class CombinedLoss(nn.Module):
             reduction='none'  # 使用none减少让我们能手动处理权重  
         )  
 
-    def calculate_weights(self, target):  
-        """计算像素级权重来平衡有效和无效像素"""  
-        valid_mask = target != self.ignore_index  
-        valid_pixels = valid_mask.sum()  
-        total_pixels = valid_mask.numel()  
-        valid_ratio = valid_pixels / total_pixels  
-        
-        # # 记录详细信息  
-        # print(f"\nLoss weight calculation:")  
-        # print(f"Valid pixels: {valid_pixels}")  
-        # print(f"Total pixels: {total_pixels}")  
-        # print(f"Valid ratio: {valid_ratio:.4f}")  
-        
-        # 根据有效像素比例动态调整权重  
-        if valid_ratio < 0.3:  # 如果有效像素过少  
-            weight_valid = 1.0  
-            weight_invalid = 0.1  
-            # print(f"警告：有效像素比例过低 ({valid_ratio:.2%})，调整权重")  
-        else:  
-            weight_valid = 1.0  
-            weight_invalid = 0.5  
+    # def calculate_weights(self, target):  
+    #     """计算像素级权重来平衡有效和无效像素"""  
+    #     valid_mask = target != self.ignore_index  
+    #     valid_pixels = valid_mask.sum()  
+    #     total_pixels = valid_mask.numel()  
+    #     valid_ratio = valid_pixels / total_pixels  
+
+    #     # 根据有效像素比例动态调整权重  
+    #     if valid_ratio < 0.3:  # 如果有效像素过少  
+    #         weight_valid = 1.0  
+    #         weight_invalid = 0.1  
+    #         # print(f"警告：有效像素比例过低 ({valid_ratio:.2%})，调整权重")  
+    #     else:  
+    #         weight_valid = 1.0  
+    #         weight_invalid = 0.5  
             
-        weights = torch.ones_like(target, dtype=torch.float32)  
-        weights[valid_mask] = weight_valid  
-        weights[~valid_mask] = weight_invalid  
+    #     weights = torch.ones_like(target, dtype=torch.float32)  
+    #     weights[valid_mask] = weight_valid  
+    #     weights[~valid_mask] = weight_invalid  
         
-        return weights  
+    #     return weights  
 
     def dice_loss(self, pred, target):  
-        """改进的Dice损失"""  
-        # 输入检查和日志  
-        # print(f"\nDice Loss Calculation:")  
-        # print(f"Input pred shape: {pred.shape}, target shape: {target.shape}")  
-        # print(f"Pred range: [{pred.min():.4f}, {pred.max():.4f}]")  
-        
+        """改进的Dice损失"""         
         batch_size = pred.size(0)  
         num_classes = pred.size(1)  
         
         # 应用softmax  
         pred = F.softmax(pred, dim=1)  
-        # print(f"After softmax range: [{pred.min():.4f}, {pred.max():.4f}]")  
         
         # 将目标转换为one-hot编码  
         target_one_hot = F.one_hot(  
@@ -452,15 +440,10 @@ class CombinedLoss(nn.Module):
         intersection = (pred * target_one_hot).sum(dim=(2, 3))  
         denominator = pred.sum(dim=(2, 3)) + target_one_hot.sum(dim=(2, 3))  
         
-        # # 数值稳定性检查  
-        # print(f"Intersection range: [{intersection.min():.4f}, {intersection.max():.4f}]")  
-        # print(f"Denominator range: [{denominator.min():.4f}, {denominator.max():.4f}]")  
-        
         # 添加平滑项并计算损失  
         dice_coef = (2 * intersection + self.smooth) / (denominator + self.smooth)  
         dice_loss = 1 - dice_coef.mean()  
         
-        # print(f"Final dice loss: {dice_loss:.4f}")  
         return dice_loss  
 
     def forward(self, pred_dict, target):  

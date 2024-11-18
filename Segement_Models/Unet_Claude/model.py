@@ -101,15 +101,6 @@ class UNet(nn.Module):
                  initial_features: int = 64,
                  dropout_rate: float = 0.2,
                  bilinear: bool = False):
-        """
-        增强型UNet网络
-        Args:
-            in_channels: 输入通道数
-            out_channels: 输出通道数
-            initial_features: 初始特征数
-            dropout_rate: dropout比率
-            bilinear: 是否使用双线性插值上采样
-        """
         super().__init__()
         self.in_channels = in_channels
         self.out_channels = out_channels

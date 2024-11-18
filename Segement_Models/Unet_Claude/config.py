@@ -27,7 +27,7 @@ class Config:
                 },
                 'model': {
                     'save_dir': '/home/nw/Codes/Segement_Models/model_save',
-                    'best_model': 'Unet_Claude_best_model.pth'
+                    'best_model': 'Unet_best_model.pth'
                 },
                 'input': {
                     'train_image': 'GF2_train_image.tif',
@@ -36,8 +36,8 @@ class Config:
                     'test_image': 'GF2_test_image.tif'
                 },
                 'output': {
-                    'train_mask_result': 'train_mask_results_Unet_Claude.tif',
-                    'test_image_result': 'GF2_test_image_results_Unet_Claude.tif'
+                    'train_mask_result': 'train_mask_results_Unet.tif',
+                    'test_image_result': 'GF2_test_image_results_Unet.tif'
                 }
             },
             'dataset': {
@@ -71,14 +71,14 @@ class Config:
             }
         }
     
-    # def _update_nested_dict(self, d1: Dict, d2: Dict) -> Dict:
-    #     """递归更新嵌套字典"""
-    #     for k, v in d2.items():
-    #         if k in d1 and isinstance(d1[k], dict) and isinstance(v, dict):
-    #             self._update_nested_dict(d1[k], v)
-    #         else:
-    #             d1[k] = v
-    #     return d1
+    def _update_nested_dict(self, d1: Dict, d2: Dict) -> Dict:
+        """递归更新嵌套字典"""
+        for k, v in d2.items():
+            if k in d1 and isinstance(d1[k], dict) and isinstance(v, dict):
+                self._update_nested_dict(d1[k], v)
+            else:
+                d1[k] = v
+        return d1
     
     def get_model_path(self) -> str:
         """获取模型保存路径"""
@@ -108,11 +108,11 @@ class Config:
 # 全局配置实例
 _global_config = None
 
-def get_config(config_path: str = None) -> Config:
+def get_config() -> Config:
     """获取全局配置实例"""
     global _global_config
     if _global_config is None:
-        _global_config = Config(config_path)
+        _global_config = Config()
     return _global_config
 
 def setup_logging(filename: str):
