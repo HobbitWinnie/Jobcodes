@@ -8,21 +8,21 @@ from torch.utils.data.distributed import DistributedSampler
 
 class RemoteSensingDataset(Dataset):  
     """遥感影像数据集"""  
-    def __init__(self, image, labels, patch_size, num_patches, preprocess_func = None):  
+    def __init__(self, image, labels, patch_size, num_patches, preprocess_func=None):  
         """  
         Args:  
             image: 输入图像 [C, H, W]  
             labels: 标签图像 [H, W]  
             patch_size: 图像块大小  
             num_patches: 随机采样的图像块数量  
-            preprocess_func: 数据预处理
+            preprocess_func: 数据预处理  
         """  
         self.image = image  
         self.labels = labels  
         self.patch_size = patch_size  
         self.num_patches = num_patches  
-        self.preprocess_func = preprocess_func
-
+        self.preprocess_func = preprocess_func  
+        
         # 确保图像格式正确  
         self.h, self.w = self.image.shape[1:]  # C, H, W  
         
@@ -42,29 +42,42 @@ class RemoteSensingDataset(Dataset):
         return self.num_patches  
 
     def __getitem__(self, idx):  
-        # 随机选择图像块位置  
-        x = random.randint(0, self.w - self.patch_size)  
-        y = random.randint(0, self.h - self.patch_size)  
+        MAX_ATTEMPTS = 20  # 最大尝试次数  
+        
+        for attempt in range(MAX_ATTEMPTS):  
+            # 随机选择图像块位置  
+            x = random.randint(0, self.w - self.patch_size)  
+            y = random.randint(0, self.h - self.patch_size)  
 
-        # 提取图像块  
-        image_patch = self.image[:3, y:y+self.patch_size, x:x+self.patch_size]  
-
-        # # 应用预处理  
-        # if self.preprocess_func:  
-        #     image_patch = self.preprocess_func(image_patch)  
-
+            # 提取图像块  
+            image_patch = self.image[:3, y:y+self.patch_size, x:x+self.patch_size]  
+                        
+            # 应用数据增强
+            if self.preprocess_func is not None:
+                image_patch = self.preprocess_func(image_patch)
+            
+            if self.labels is not None:  
+                # 提取标签patch  
+                label_patch = self.labels[y:y+self.patch_size, x:x+self.patch_size]  
+                
+                # 计算0像素值的比例  
+                zero_ratio = (label_patch == 0).sum() / (self.patch_size * self.patch_size)  
+                
+                # 如果比例大于30%，则返回该patch  
+                if zero_ratio > 0.3:  
+                    image_patch = torch.from_numpy(image_patch).float()  
+                    label_patch = torch.from_numpy(label_patch).long()  
+                    validate_labels(label_patch)  
+                    return image_patch, label_patch  
+            else:  
+                image_patch = torch.from_numpy(image_patch).float()  
+                return image_patch  
+                
+        # 如果达到最大尝试次数仍未找到合适的patch，使用最后一个采样的patch  
         image_patch = torch.from_numpy(image_patch).float()  
-
-        if self.labels is None:  
-            return image_patch  
-
-        # 提取并验证标签  
-        label_patch = self.labels[y:y+self.patch_size, x:x+self.patch_size]  
         label_patch = torch.from_numpy(label_patch).long()  
         validate_labels(label_patch)  
-
-        return image_patch, label_patch  
-
+        return image_patch, label_patch
 
 def validate_labels(labels: torch.Tensor, num_classes: int = 9) -> None:  
     """验证标签值是否在有效范围内"""  

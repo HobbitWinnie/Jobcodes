@@ -36,7 +36,7 @@ def analyze_class_distribution(labels):
     # 归一化权重  
     weights = weights / np.sum(weights) * len(weights)  
     # 调整背景类权重  
-    weights[0] = min(weights[0], 0.5)  
+    weights[0] = min(weights[0], 0.1)  
     
     return distribution, weights.tolist()  
 
@@ -63,8 +63,8 @@ def init_training(config, labels):
 
     # 分析数据分布  
     distribution, class_weights = analyze_class_distribution(labels)  
-    logging.info(f"类别分布: {json.dumps(distribution, indent=2)}")  
-    logging.info(f"类别权重: {class_weights}")  
+    # logging.info(f"类别分布: {json.dumps(distribution, indent=2)}")  
+    # logging.info(f"类别权重: {class_weights}")  
 
     # 初始化模型  
     num_classes = config['dataset']['num_classes']  
@@ -73,13 +73,9 @@ def init_training(config, labels):
         ckpt_path=config['paths']['model']['clip_ckpt'],  
         num_classes=num_classes,  
         dropout_rate=0.2,  
-        use_aux_loss=False,  
+        use_aux_loss=True,  
         initial_features=128  
     ).to(device)  
-
-    if torch.cuda.device_count() > 1:  
-        model = nn.DataParallel(model)  
-        logging.info(f"使用 {torch.cuda.device_count()} 个GPU训练")  
 
     # 初始化优化器  
     optimizer = optim.AdamW(  
@@ -100,8 +96,7 @@ def init_training(config, labels):
     # 初始化损失函数  
     criterion = CombinedLoss(  
         num_classes=num_classes,  
-        class_weights=class_weights,  
-        focal_gamma=2  
+        class_weights=None,  
     ).to(device)  
 
     return device, exp_dir, model, optimizer, scheduler, criterion  
@@ -115,7 +110,7 @@ def validate_model(model, val_loader, criterion, device, num_classes, progress):
     confusion_matrix = np.zeros((num_classes, num_classes))  
 
     with torch.no_grad():  
-        for batch in tqdm(val_loader, desc="验证中", leave=False):  
+        for batch in val_loader:  
             images, masks = batch[0].to(device), batch[1].to(device)  
             
             with autocast():  
@@ -123,7 +118,7 @@ def validate_model(model, val_loader, criterion, device, num_classes, progress):
                 loss, loss_info = criterion(outputs, masks, progress)  
             
             val_loss += loss.item()  
-            loss_components['focal_loss'] += loss_info['focal_loss']  
+            loss_components['bce_loss'] += loss_info['bce_loss']  
             loss_components['dice_loss'] += loss_info['dice_loss']  
             
             preds = outputs['main'].argmax(1) if isinstance(outputs, dict) else outputs.argmax(1)  
@@ -146,7 +141,7 @@ def validate_model(model, val_loader, criterion, device, num_classes, progress):
     # 计算平均损失  
     num_batches = len(val_loader)  
     avg_loss = val_loss / num_batches  
-    avg_focal_loss = loss_components['focal_loss'] / num_batches  
+    avg_bce_loss = loss_components['bce_loss'] / num_batches  
     avg_dice_loss = loss_components['dice_loss'] / num_batches  
 
     # 计算每个类别的性能指标  
@@ -181,7 +176,7 @@ def validate_model(model, val_loader, criterion, device, num_classes, progress):
     
     validation_results = {  
         'loss': avg_loss,  
-        'focal_loss': avg_focal_loss,  
+        'bce_loss': avg_bce_loss,  
         'dice_loss': avg_dice_loss,  
         'accuracy': accuracy,  
         'mean_iou': mean_iou,  
@@ -206,10 +201,10 @@ def train_loop(model, train_loader, val_loader, criterion, optimizer, scheduler,
     # 记录训练历史  
     metrics_history = {  
         'train_loss': [],  
-        'train_focal_loss': [],  
+        'train_bce_loss': [],  
         'train_dice_loss': [],  
         'val_loss': [],  
-        'val_focal_loss': [],  
+        'val_bce_loss': [],  
         'val_dice_loss': [],  
         'val_miou': [],  
         'val_accuracy': [],  
@@ -222,17 +217,14 @@ def train_loop(model, train_loader, val_loader, criterion, optimizer, scheduler,
         for epoch in range(total_epochs):  
             model.train()  
             epoch_loss = 0  
-            epoch_focal_loss = 0  
+            epoch_bce_loss = 0  
             epoch_dice_loss = 0  
             batch_count = 0  
             epoch_start = time.time()  
             progress = (epoch + 1) / total_epochs  
             current_lr = optimizer.param_groups[0]['lr']  
-
-            # 使用tqdm创建进度条  
-            train_bar = tqdm(train_loader, desc=f"Epoch {epoch+1}/{total_epochs}")  
             
-            for batch in train_bar:  
+            for batch in train_loader:  
                 images, masks = batch[0].to(device), batch[1].to(device)  
                 
                 optimizer.zero_grad(set_to_none=True)  
@@ -256,17 +248,9 @@ def train_loop(model, train_loader, val_loader, criterion, optimizer, scheduler,
                 
                 # 更新损失统计  
                 epoch_loss += loss.item()  
-                epoch_focal_loss += loss_info['focal_loss']  
+                epoch_bce_loss += loss_info['bce_loss']  
                 epoch_dice_loss += loss_info['dice_loss']  
                 batch_count += 1  
-
-                # 更新进度条  
-                train_bar.set_postfix({  
-                    'loss': f"{loss.item():.4f}",  
-                    'focal': f"{loss_info['focal_loss']:.4f}",  
-                    'dice': f"{loss_info['dice_loss']:.4f}",  
-                    'lr': f"{current_lr:.6f}"  
-                })  
 
                 # 清理内存  
                 del outputs, loss  
@@ -274,7 +258,7 @@ def train_loop(model, train_loader, val_loader, criterion, optimizer, scheduler,
 
             # 计算平均损失  
             avg_loss = epoch_loss / batch_count  
-            avg_focal_loss = epoch_focal_loss / batch_count  
+            avg_bce_loss = epoch_bce_loss / batch_count  
             avg_dice_loss = epoch_dice_loss / batch_count  
             epoch_time = time.time() - epoch_start  
             
@@ -283,7 +267,7 @@ def train_loop(model, train_loader, val_loader, criterion, optimizer, scheduler,
             
             # 记录训练指标  
             metrics_history['train_loss'].append(avg_loss)  
-            metrics_history['train_focal_loss'].append(avg_focal_loss)  
+            metrics_history['train_bce_loss'].append(avg_bce_loss)  
             metrics_history['train_dice_loss'].append(avg_dice_loss)  
             metrics_history['learning_rate'].append(current_lr)  
 
@@ -296,7 +280,7 @@ def train_loop(model, train_loader, val_loader, criterion, optimizer, scheduler,
 
                 # 更新验证指标历史  
                 metrics_history['val_loss'].append(val_metrics['loss'])  
-                metrics_history['val_focal_loss'].append(val_metrics['focal_loss'])  
+                metrics_history['val_bce_loss'].append(val_metrics['bce_loss'])  
                 metrics_history['val_dice_loss'].append(val_metrics['dice_loss'])  
                 metrics_history['val_miou'].append(val_metrics['mean_iou'])  
                 metrics_history['val_accuracy'].append(val_metrics['accuracy'])  
@@ -304,7 +288,7 @@ def train_loop(model, train_loader, val_loader, criterion, optimizer, scheduler,
                 # 输出详细的训练信息  
                 logging.info(  
                     f"\nEpoch {epoch+1}/{total_epochs} [{epoch_time:.2f}s]\n"  
-                    f"训练损失: {avg_loss:.4f} (Focal: {avg_focal_loss:.4f}, Dice: {avg_dice_loss:.4f})\n"  
+                    f"训练损失: {avg_loss:.4f} (Focal: {avg_bce_loss:.4f}, Dice: {avg_dice_loss:.4f})\n"  
                     f"验证损失: {val_metrics['loss']:.4f} (Focal: {val_metrics['focal_loss']:.4f}, "  
                     f"Dice: {val_metrics['dice_loss']:.4f})\n"  
                     f"验证指标: Acc = {val_metrics['accuracy']:.4f}, mIoU = {val_metrics['mean_iou']:.4f}\n"  
@@ -381,6 +365,9 @@ def main():
         print("\n数据集类别分布:")
         print(json.dumps(distribution, indent=2))
 
+        # 初始化训练组件
+        device, exp_dir, model, optimizer, scheduler, criterion = init_training(config, labels)
+
         # 创建数据加载器
         train_loader, val_loader = create_dataloaders(
             image=image,
@@ -389,11 +376,12 @@ def main():
             num_patches=config['dataset']['patch_number'],
             batch_size=config['training']['batch_size'],
             train_ratio=config['dataset']['train_val_split'],
-            num_workers=config['dataset']['num_workers']
+            num_workers=config['dataset']['num_workers'],
         )
 
-        # 初始化训练组件
-        device, exp_dir, model, optimizer, scheduler, criterion = init_training(config, labels)
+        if torch.cuda.device_count() > 1:  
+            model = nn.DataParallel(model)  
+            logging.info(f"使用 {torch.cuda.device_count()} 个GPU训练")  
 
         # 开始训练
         best_miou, metrics_history = train_loop(

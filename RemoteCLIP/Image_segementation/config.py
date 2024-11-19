@@ -42,7 +42,7 @@ class Config:
             'training': {  
                 'epochs': 2000,  
                 'batch_size': 64,  
-                'learning_rate': 1e-4,
+                'learning_rate': 1e-3,
                 'min_lr': 1e-6,  
                 'weight_decay': 0.001,  
                 'patience': 100,  
