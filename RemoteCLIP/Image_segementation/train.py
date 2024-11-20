@@ -96,7 +96,7 @@ def init_training(config, labels):
     # 初始化损失函数  
     criterion = CombinedLoss(  
         num_classes=num_classes,  
-        class_weights=None,  
+        class_weights=class_weights,  
     ).to(device)  
 
     return device, exp_dir, model, optimizer, scheduler, criterion  
@@ -105,7 +105,7 @@ def validate_model(model, val_loader, criterion, device, num_classes, progress):
     """验证模型性能"""  
     model.eval()  
     val_loss = 0  
-    loss_components = {'focal_loss': 0, 'dice_loss': 0}  
+    loss_components = {'ce_loss': 0, 'dice_loss': 0}  
     class_metrics = {i: {'correct': 0, 'total': 0} for i in range(num_classes)}  
     confusion_matrix = np.zeros((num_classes, num_classes))  
 
@@ -115,10 +115,10 @@ def validate_model(model, val_loader, criterion, device, num_classes, progress):
             
             with autocast():  
                 outputs = model(images)  
-                loss, loss_info = criterion(outputs, masks, progress)  
+                loss, loss_info = criterion(outputs, masks)  
             
             val_loss += loss.item()  
-            loss_components['bce_loss'] += loss_info['bce_loss']  
+            loss_components['ce_loss'] += loss_info['ce_loss']  
             loss_components['dice_loss'] += loss_info['dice_loss']  
             
             preds = outputs['main'].argmax(1) if isinstance(outputs, dict) else outputs.argmax(1)  
@@ -141,7 +141,7 @@ def validate_model(model, val_loader, criterion, device, num_classes, progress):
     # 计算平均损失  
     num_batches = len(val_loader)  
     avg_loss = val_loss / num_batches  
-    avg_bce_loss = loss_components['bce_loss'] / num_batches  
+    avg_ce_loss = loss_components['ce_loss'] / num_batches  
     avg_dice_loss = loss_components['dice_loss'] / num_batches  
 
     # 计算每个类别的性能指标  
@@ -176,7 +176,7 @@ def validate_model(model, val_loader, criterion, device, num_classes, progress):
     
     validation_results = {  
         'loss': avg_loss,  
-        'bce_loss': avg_bce_loss,  
+        'ce_loss': avg_ce_loss,  
         'dice_loss': avg_dice_loss,  
         'accuracy': accuracy,  
         'mean_iou': mean_iou,  
@@ -201,10 +201,10 @@ def train_loop(model, train_loader, val_loader, criterion, optimizer, scheduler,
     # 记录训练历史  
     metrics_history = {  
         'train_loss': [],  
-        'train_bce_loss': [],  
+        'train_ce_loss': [],  
         'train_dice_loss': [],  
         'val_loss': [],  
-        'val_bce_loss': [],  
+        'val_ce_loss': [],  
         'val_dice_loss': [],  
         'val_miou': [],  
         'val_accuracy': [],  
@@ -217,7 +217,7 @@ def train_loop(model, train_loader, val_loader, criterion, optimizer, scheduler,
         for epoch in range(total_epochs):  
             model.train()  
             epoch_loss = 0  
-            epoch_bce_loss = 0  
+            epoch_ce_loss = 0  
             epoch_dice_loss = 0  
             batch_count = 0  
             epoch_start = time.time()  
@@ -231,7 +231,9 @@ def train_loop(model, train_loader, val_loader, criterion, optimizer, scheduler,
                 
                 with autocast():  
                     outputs = model(images)  
-                    loss, loss_info = criterion(outputs, masks, progress)  
+                    # loss, loss_info = criterion(outputs, masks, progress)  
+                    loss, loss_info = criterion(outputs, masks)  
+
 
                 if not torch.isfinite(loss):  
                     logging.warning(f"检测到非有限损失值: {loss.item()}")  
@@ -248,7 +250,7 @@ def train_loop(model, train_loader, val_loader, criterion, optimizer, scheduler,
                 
                 # 更新损失统计  
                 epoch_loss += loss.item()  
-                epoch_bce_loss += loss_info['bce_loss']  
+                epoch_ce_loss += loss_info['ce_loss']  
                 epoch_dice_loss += loss_info['dice_loss']  
                 batch_count += 1  
 
@@ -258,7 +260,7 @@ def train_loop(model, train_loader, val_loader, criterion, optimizer, scheduler,
 
             # 计算平均损失  
             avg_loss = epoch_loss / batch_count  
-            avg_bce_loss = epoch_bce_loss / batch_count  
+            avg_ce_loss = epoch_ce_loss / batch_count  
             avg_dice_loss = epoch_dice_loss / batch_count  
             epoch_time = time.time() - epoch_start  
             
@@ -267,7 +269,7 @@ def train_loop(model, train_loader, val_loader, criterion, optimizer, scheduler,
             
             # 记录训练指标  
             metrics_history['train_loss'].append(avg_loss)  
-            metrics_history['train_bce_loss'].append(avg_bce_loss)  
+            metrics_history['train_ce_loss'].append(avg_ce_loss)  
             metrics_history['train_dice_loss'].append(avg_dice_loss)  
             metrics_history['learning_rate'].append(current_lr)  
 
@@ -280,7 +282,7 @@ def train_loop(model, train_loader, val_loader, criterion, optimizer, scheduler,
 
                 # 更新验证指标历史  
                 metrics_history['val_loss'].append(val_metrics['loss'])  
-                metrics_history['val_bce_loss'].append(val_metrics['bce_loss'])  
+                metrics_history['val_ce_loss'].append(val_metrics['ce_loss'])  
                 metrics_history['val_dice_loss'].append(val_metrics['dice_loss'])  
                 metrics_history['val_miou'].append(val_metrics['mean_iou'])  
                 metrics_history['val_accuracy'].append(val_metrics['accuracy'])  
@@ -288,8 +290,8 @@ def train_loop(model, train_loader, val_loader, criterion, optimizer, scheduler,
                 # 输出详细的训练信息  
                 logging.info(  
                     f"\nEpoch {epoch+1}/{total_epochs} [{epoch_time:.2f}s]\n"  
-                    f"训练损失: {avg_loss:.4f} (Focal: {avg_bce_loss:.4f}, Dice: {avg_dice_loss:.4f})\n"  
-                    f"验证损失: {val_metrics['loss']:.4f} (Focal: {val_metrics['focal_loss']:.4f}, "  
+                    f"训练损失: {avg_loss:.4f} (Ce: {avg_ce_loss:.4f}, Dice: {avg_dice_loss:.4f})\n"  
+                    f"验证损失: {val_metrics['loss']:.4f} (Ce: {val_metrics['ce_loss']:.4f}, "  
                     f"Dice: {val_metrics['dice_loss']:.4f})\n"  
                     f"验证指标: Acc = {val_metrics['accuracy']:.4f}, mIoU = {val_metrics['mean_iou']:.4f}\n"  
                     f"学习率: {current_lr:.6f}"  
@@ -312,10 +314,6 @@ def train_loop(model, train_loader, val_loader, criterion, optimizer, scheduler,
                     best_miou = val_metrics['mean_iou']  
                     torch.save(checkpoint, exp_dir / 'best_model.pth')  
                     logging.info(f"保存最佳模型 (mIoU: {best_miou:.4f})")  
-                    
-                # 定期保存检查点  
-                if (epoch + 1) % config['training'].get('checkpoint_frequency', 10) == 0:  
-                    torch.save(checkpoint, exp_dir / f'checkpoint_epoch_{epoch+1}.pth')  
 
                 # 保存训练指标  
                 with open(exp_dir / 'metrics_history.json', 'w') as f:  

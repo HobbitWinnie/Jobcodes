@@ -64,13 +64,13 @@ def dice_coefficient(
 
 class CombinedLoss(nn.Module):  
     """  
-    组合BCE和Dice损失的损失函数  
+    组合CrossEntropy和Dice损失的损失函数  
     """  
     def __init__(  
         self,  
         num_classes: int,  
         class_weights: torch.Tensor = None,  
-        weights: list = [0.5, 0.5],  
+        weights: list = [0.6, 0.4],  
         ignore_index: int = 0,  
         epsilon: float = 1e-6,  
         reduction: str = 'mean'  
@@ -81,7 +81,7 @@ class CombinedLoss(nn.Module):
         Args:  
             num_classes: 类别数量  
             class_weights: 每个类别的权重  
-            weights: BCE和Dice损失的权重 [bce_weight, dice_weight]  
+            weights: CrossEntropy和Dice损失的权重 [ce_weight, dice_weight]  
             ignore_index: 忽略的类别索引  
             epsilon: 防止除零的小值  
             reduction: 损失计算方式 ('mean', 'sum', 'none')  
@@ -97,8 +97,12 @@ class CombinedLoss(nn.Module):
         
         self.register_buffer('class_weights', class_weights)  
         
-        # 初始化BCE损失  
-        self.bce = nn.BCEWithLogitsLoss(reduction=reduction)  
+        # 初始化CrossEntropy损失  
+        self.ce = nn.CrossEntropyLoss(  
+            weight=class_weights,  
+            ignore_index=ignore_index,  
+            reduction=reduction  
+        )  
         
         self.weights = weights  
         self.ignore_index = ignore_index  
@@ -106,64 +110,18 @@ class CombinedLoss(nn.Module):
         self.reduction = reduction  
         
         # 验证权重  
-        assert len(weights) == 2, "权重必须包含两个值 [bce_weight, dice_weight]"  
+        assert len(weights) == 2, "权重必须包含两个值 [ce_weight, dice_weight]"  
         assert abs(sum(weights) - 1.0) < 1e-4, "权重之和必须为1"  
         
         # 初始化损失历史记录  
         self.loss_history = {  
-            'bce_loss': [],  
+            'ce_loss': [],  
             'dice_loss': [],  
             'total_loss': []  
         }  
 
-    def update_class_weights(self, new_weights):  
-        """  
-        更新类别权重  
-        
-        Args:  
-            new_weights: 新的类别权重  
-        """  
-        device = self.class_weights.device  
-        if not isinstance(new_weights, torch.Tensor):  
-            new_weights = torch.FloatTensor(new_weights)  
-        new_weights = new_weights.to(device)  
-        self.class_weights.copy_(new_weights)  
-        logging.info(f"类别权重已更新: {new_weights}")  
-
-    def get_dynamic_weights(self, progress):  
-        """  
-        根据训练进度动态调整损失权重  
-        
-        Args:  
-            progress: 训练进度 (0~1)  
-        
-        Returns:  
-            list: [bce_weight, dice_weight]  
-        """  
-        if progress < 0.2:  
-            return [0.7, 0.3]  
-        elif progress < 0.5:  
-            return [0.5, 0.5]  
-        elif progress < 0.8:  
-            return [0.3, 0.7]  
-        else:  
-            return [0.2, 0.8]  
-
-    def forward(self, outputs, targets, progress):  
-        """  
-        计算组合损失  
-        
-        Args:  
-            outputs: 模型输出的字典，包含 'main' 键  
-            targets: 目标标签  
-            progress: 训练进度 (0~1)  
-            
-        Returns:  
-            tuple: (total_loss, metrics_dict)  
-        """  
-        device = outputs['main'].device  
-        self.weights = self.get_dynamic_weights(progress)  
-        
+    def forward(self, outputs, targets):  
+        device = outputs['main'].device        
         predicts = outputs['main']  # [B, C, H, W]  
         
         # 检查设备一致性  
@@ -184,30 +142,8 @@ class CombinedLoss(nn.Module):
         # 获取形状信息  
         b, c, h, w = predicts.size()  
         
-        # 创建mask用于忽略特定类别  
-        valid_mask = (targets != self.ignore_index).float()  
-        
-        # 准备BCE的目标tensor - 改用展平的方式处理  
-        targets_flat = targets.view(-1)  # [B*H*W]  
-        valid_mask_flat = valid_mask.view(-1)  # [B*H*W]  
-        
-        # 创建one-hot编码  
-        target_one_hot = F.one_hot(  
-            torch.where(valid_mask_flat == 1, targets_flat, 0),  
-            num_classes=self.num_classes  
-        ).float()  # [B*H*W, C]  
-        
-        # 重塑预测tensor  
-        predicts_flat = predicts.permute(0, 2, 3, 1).contiguous()  # [B, H, W, C]  
-        predicts_flat = predicts_flat.view(-1, self.num_classes)  # [B*H*W, C]  
-        
-        # 应用mask  
-        valid_samples = valid_mask_flat == 1  
-        predicts_valid = predicts_flat[valid_samples]  
-        targets_valid = target_one_hot[valid_samples]  
-        
-        # 计算BCE loss  
-        bce_loss = self.bce(predicts_valid, targets_valid)  
+        # 计算CrossEntropy loss  
+        ce_loss = self.ce(predicts, targets)  
         
         # 计算dice loss  
         dice_score = dice_coefficient(  
@@ -219,17 +155,17 @@ class CombinedLoss(nn.Module):
         dice_loss = 1 - dice_score  
         
         # 组合损失  
-        total_loss = self.weights[0] * bce_loss + self.weights[1] * dice_loss  
+        total_loss = self.weights[0] * ce_loss + self.weights[1] * dice_loss  
         
         # 记录历史  
-        self.loss_history['bce_loss'].append(bce_loss.item())  
+        self.loss_history['ce_loss'].append(ce_loss.item())  
         self.loss_history['dice_loss'].append(dice_loss.item())  
         self.loss_history['total_loss'].append(total_loss.item())  
         
         # 检查异常值  
         if torch.isnan(total_loss) or torch.isinf(total_loss):  
             logging.error(  
-                f"损失计算异常! BCE Loss: {bce_loss.item()}, "  
+                f"损失计算异常! CE Loss: {ce_loss.item()}, "  
                 f"Dice Loss: {dice_loss.item()}"  
             )  
             raise ValueError("损失计算结果无效")  
@@ -246,28 +182,10 @@ class CombinedLoss(nn.Module):
                 class_accuracies.append((i, acc.item()))  
         
         return total_loss, {  
-            'bce_loss': bce_loss.item(),  
+            'ce_loss': ce_loss.item(),  
             'dice_loss': dice_loss.item(),  
             'total_loss': total_loss.item(),  
             'weights': self.weights,  
             'dice_score': dice_score.item(),  
             'class_accuracies': class_accuracies  
-        }  
-
-    def get_loss_statistics(self):  
-        """  
-        获取损失统计信息  
-        
-        Returns:  
-            dict: 包含各类损失的统计信息  
-        """  
-        stats = {}  
-        for loss_type, values in self.loss_history.items():  
-            if values:  
-                stats[loss_type] = {  
-                    'mean': np.mean(values),  
-                    'std': np.std(values),  
-                    'min': np.min(values),  
-                    'max': np.max(values)  
-                }  
-        return stats
+        }
