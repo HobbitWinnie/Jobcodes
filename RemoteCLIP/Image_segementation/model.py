@@ -2,227 +2,288 @@ import torch
 import torch.nn as nn  
 import torch.nn.functional as F  
 import open_clip  
+from collections import OrderedDict  
 
 class DoubleConv(nn.Module):  
-    """增强的双卷积块"""  
-    def __init__(self, in_channels: int, out_channels: int, dropout_rate: float = 0.2):  
+    """双卷积块"""  
+    def __init__(self, in_channels, out_channels, mid_channels=None):  
         super().__init__()  
+        if not mid_channels:  
+            mid_channels = out_channels  
         self.double_conv = nn.Sequential(  
-            nn.Conv2d(in_channels, out_channels, kernel_size=3, padding=1, bias=False),  
-            nn.BatchNorm2d(out_channels),  
+            nn.Conv2d(in_channels, mid_channels, kernel_size=3, padding=1, bias=False),  
+            nn.BatchNorm2d(mid_channels),  
             nn.ReLU(inplace=True),  
-            nn.Dropout2d(dropout_rate),  
-            nn.Conv2d(out_channels, out_channels, kernel_size=3, padding=1, bias=False),  
+            nn.Conv2d(mid_channels, out_channels, kernel_size=3, padding=1, bias=False),  
             nn.BatchNorm2d(out_channels),  
-            nn.ReLU(inplace=True),  
-            nn.Dropout2d(dropout_rate)  
+            nn.ReLU(inplace=True)  
         )  
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:  
+    def forward(self, x):  
         return self.double_conv(x)  
 
-class AttentionGate(nn.Module):  
-    """注意力门控模块"""  
-    def __init__(self, F_g, F_l, F_int=None):  
-        super().__init__()  
-        F_int = F_int or min(F_g, F_l)  
-        
-        self.W_g = nn.Sequential(  
-            nn.Conv2d(F_g, F_int, kernel_size=1, bias=True),  
-            nn.BatchNorm2d(F_int)  
-        )  
-        
-        self.W_x = nn.Sequential(  
-            nn.Conv2d(F_l, F_int, kernel_size=1, bias=True),  
-            nn.BatchNorm2d(F_int)  
-        )  
-        
-        self.psi = nn.Sequential(  
-            nn.Conv2d(F_int, 1, kernel_size=1, bias=True),  
-            nn.BatchNorm2d(1),  
-            nn.Sigmoid()  
-        )  
-        
-        self.relu = nn.ReLU(inplace=True)  
-
-    def forward(self, g, x):  
-        g1 = self.W_g(g)  
-        x1 = self.W_x(x)  
-        psi = self.relu(g1 + x1)  
-        return x * self.psi(psi)  
-
-class UpBlock(nn.Module):  
-    """增强的上采样块"""  
-    def __init__(self, in_channels, out_channels, dropout_rate=0.2):  
+class DecoderBlock(nn.Module):  
+    """解码器块"""  
+    def __init__(self, in_channels, skip_channels, out_channels, dropout_rate=0.1):  
         super().__init__()  
         self.up = nn.ConvTranspose2d(in_channels, in_channels // 2, kernel_size=2, stride=2)  
-        self.attention = AttentionGate(F_g=in_channels//2, F_l=in_channels//2)  
-        self.conv = DoubleConv(in_channels, out_channels, dropout_rate)  # in_channels而不是in_channels//2  
+        self.conv = DoubleConv(in_channels // 2 + skip_channels, out_channels)  
+        self.dropout = nn.Dropout2d(dropout_rate)  
+    
+    def forward(self, x, skip=None):  
+        x = self.up(x)  
+        
+        # 确保skip和x的空间尺寸匹配  
+        if skip is not None:  
+            # 如果尺寸不匹配，调整skip的尺寸  
+            if x.shape[-2:] != skip.shape[-2:]:  
+                skip = F.interpolate(  
+                    skip,  
+                    size=x.shape[-2:],  
+                    mode='bilinear',  
+                    align_corners=False  
+                )  
+            x = torch.cat([skip, x], dim=1)  
+        
+        x = self.dropout(x)  
+        return self.conv(x)  
 
-    def forward(self, x1, x2=None):  
-            """改进的前向传播"""  
-            x1 = self.up(x1)  
-            
-            if x2 is not None:  
-                # 处理大小不匹配  
-                diff_y = x2.size()[2] - x1.size()[2]  
-                diff_x = x2.size()[3] - x1.size()[3]  
-                x1 = F.pad(x1, [diff_x // 2, diff_x - diff_x // 2,  
-                            diff_y // 2, diff_y - diff_y // 2])  
-                
-                # 确保注意力机制被使用  
-                x2 = self.attention(g=x1, x=x2)  
-                x = torch.cat([x2, x1], dim=1)  
-            else:  
-                # 如果没有skip connection，仍然使用注意力  
-                x = self.attention(g=x1, x=x1)  
-                x = torch.cat([x, x1], dim=1)  
-                
-            return self.conv(x)  
-
-class RemoteClipUNet(nn.Module):  
-    """增强的RemoteClipUNet模型，结合CLIP特征和UNet架构"""  
-    def __init__(self,  
-                 model_name='ViT-B-32',  
-                 ckpt_path=None,  
-                 num_classes=9,  
-                 dropout_rate=0.2,  
-                 use_aux_loss=True,  
-                 initial_features=128):  
-        super().__init__()  
-        self.input_size = 224  
+class UNetWithCLIP(nn.Module):  
+    def __init__(self, model_name, ckpt_path, num_classes, input_size=224,  
+                 dropout_rate=0.1, use_aux_loss=True, initial_features=64):  
+        """  
+        初始化 UNetWithCLIP 模型  
+        
+        Args:  
+            model_name (str): CLIP 模型名称  
+            ckpt_path (str): 检查点路径  
+            num_classes (int): 类别数量  
+            input_size (int): 输入图像大小  
+            dropout_rate (float): dropout 比率  
+            use_aux_loss (bool): 是否使用辅助损失  
+            initial_features (int): 初始特征通道数  
+        """  
+        super(UNetWithCLIP, self).__init__()  
+        
+        self.input_size = input_size  
         self.use_aux_loss = use_aux_loss  
-        self.dropout_rate = dropout_rate  
-        self.num_classes = num_classes  
-
-        # 初始化CLIP模型  
+        
+        # 初始化 CLIP 模型  
         self._init_clip_model(model_name, ckpt_path)  
-
-        # 特征转换层 - 使用残差连接  
-        self.feature_transform = nn.Sequential(  
-            nn.Conv2d(512, 512, 1, bias=False),  
-            nn.BatchNorm2d(512),  
-            nn.ReLU(inplace=True),  
-            nn.Dropout2d(dropout_rate),  
-            
-            nn.Conv2d(512, 1024, 1, bias=False),  
-            nn.BatchNorm2d(1024),  
-            nn.ReLU(inplace=True),  
-            nn.Dropout2d(dropout_rate),  
-            
-            nn.Conv2d(1024, initial_features * 16, 1, bias=False),  
-            nn.BatchNorm2d(initial_features * 16),  
-            nn.ReLU(inplace=True),  
-            nn.Dropout2d(dropout_rate)  
-        )  
-
-        # 添加空间注意力  
-        self.spatial_attention = nn.Sequential(  
-            nn.Conv2d(initial_features * 16, initial_features * 16, 1),  
-            nn.BatchNorm2d(initial_features * 16),  
-            nn.Sigmoid()  
-        )  
-
-        # 解码器路径  
-        self.decoder_blocks = nn.ModuleList([  
-            UpBlock(initial_features * 16, initial_features * 8, dropout_rate),  # 7->14  
-            UpBlock(initial_features * 8, initial_features * 4, dropout_rate),   # 14->28  
-            UpBlock(initial_features * 4, initial_features * 2, dropout_rate),   # 28->56  
-            UpBlock(initial_features * 2, initial_features, dropout_rate),       # 56->112  
-            UpBlock(initial_features, initial_features // 2, dropout_rate)       # 112->224  
+        
+        # 获取各层输出通道数  
+        encoder_layers = self._get_visual_encoder_layers()  
+        
+        # 特征转换层  
+        self.feature_transforms = nn.ModuleList([  
+            nn.Conv2d(layer[1], initial_features * (2 ** i), 1)  
+            for i, layer in enumerate(encoder_layers)  
         ])  
-
-        # 输出层  
+        
+        # 解码器块  
+        decoder_in_channels = [initial_features * (2 ** i) for i in range(4, 0, -1)]  
+        decoder_skip_channels = [initial_features * (2 ** i) for i in range(3, -1, -1)]  
+        decoder_out_channels = [initial_features * (2 ** i) for i in range(3, -1, -1)]  
+        
+        self.decoder_blocks = nn.ModuleList([  
+            DecoderBlock(in_ch, skip_ch, out_ch, dropout_rate)  
+            for in_ch, skip_ch, out_ch in zip(  
+                decoder_in_channels, decoder_skip_channels, decoder_out_channels  
+            )  
+        ])  
+        
+        # 最终卷积层  
         self.final_conv = nn.Sequential(  
-            nn.Conv2d(initial_features // 2, initial_features // 2, 3, padding=1, bias=False),  
+            nn.Conv2d(initial_features, initial_features // 2, 3, padding=1, bias=False),  
             nn.BatchNorm2d(initial_features // 2),  
             nn.ReLU(inplace=True),  
             nn.Dropout2d(dropout_rate),  
             nn.Conv2d(initial_features // 2, num_classes, 1)  
         )  
-
-        # 改进的辅助头  
+        
+        # 辅助头  
         if use_aux_loss:  
             self.aux_head = nn.Sequential(  
-                DoubleConv(initial_features * 16, initial_features * 8, dropout_rate),  
-                nn.Conv2d(initial_features * 8, initial_features * 4, 1),  
-                nn.BatchNorm2d(initial_features * 4),  
+                nn.Conv2d(initial_features * 16, initial_features * 8, 3, padding=1, bias=False),  
+                nn.BatchNorm2d(initial_features * 8),  
                 nn.ReLU(inplace=True),  
                 nn.Dropout2d(dropout_rate),  
-                nn.Conv2d(initial_features * 4, num_classes, 1)  
+                nn.Conv2d(initial_features * 8, num_classes, 1)  
             )  
-
+        
         self.initialize_weights()  
 
-    def extract_features(self, x):  
-        """单独的特征提取方法"""  
-        with torch.no_grad():  
-            # 确保在评估模式  
+    def _init_clip_model(self, model_name, ckpt_path):  
+        """初始化 CLIP 模型"""  
+        try:  
+            device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')  
+            model, _, self.preprocess_func = open_clip.create_model_and_transforms(model_name)  
+            
+            if ckpt_path:  
+                ckpt = torch.load(ckpt_path, map_location=device)  
+                model.load_state_dict(ckpt)  
+            
+            self.visual_encoder = model.visual  
             self.visual_encoder.eval()  
-            # 使用FP32进行CLIP推理  
-            with torch.cuda.amp.autocast(enabled=False):  
-                visual_features = self.visual_encoder(x)  
-        return visual_features  
+            
+            # 确保编码器通道数正确  
+            self._ensure_encoder_channels()  
+            
+            # 冻结参数  
+            for param in self.visual_encoder.parameters():  
+                param.requires_grad = False  
+                
+        except Exception as e:  
+            print(f"CLIP 模型加载失败: {str(e)}")  
+            raise RuntimeError(f"CLIP 模型加载失败: {str(e)}")  
+
+    def _ensure_encoder_channels(self):  
+        """确保编码器各层通道数一致"""  
+        # 保存原始配置  
+        original_conv1 = self.visual_encoder.conv1  
+        original_bn1 = self.visual_encoder.bn1  
+        
+        # 重建 conv1  
+        self.visual_encoder.conv1 = nn.Conv2d(  
+            in_channels=3,  
+            out_channels=64,  
+            kernel_size=original_conv1.kernel_size,  
+            stride=original_conv1.stride,  
+            padding=original_conv1.padding,  
+            bias=False  
+        )  
+        
+        # 重建 bn1  
+        self.visual_encoder.bn1 = nn.BatchNorm2d(  
+            num_features=64,  
+            eps=original_bn1.eps,  
+            momentum=original_bn1.momentum,  
+            affine=original_bn1.affine,  
+            track_running_stats=original_bn1.track_running_stats  
+        )  
+        
+        # 转换权重（如果需要）  
+        if original_conv1.out_channels == 32:  
+            with torch.no_grad():  
+                original_weights = original_conv1.weight.data  
+                new_weights = torch.zeros(64, 3, *original_conv1.kernel_size)  
+                new_weights[:32] = original_weights  
+                new_weights[32:] = original_weights  
+                self.visual_encoder.conv1.weight.data = new_weights  
+                
+                if original_bn1.affine:  
+                    self.visual_encoder.bn1.weight.data[:32] = original_bn1.weight.data  
+                    self.visual_encoder.bn1.weight.data[32:] = original_bn1.weight.data  
+                    self.visual_encoder.bn1.bias.data[:32] = original_bn1.bias.data  
+                    self.visual_encoder.bn1.bias.data[32:] = original_bn1.bias.data  
+                
+                self.visual_encoder.bn1.running_mean.data[:32] = original_bn1.running_mean.data  
+                self.visual_encoder.bn1.running_mean.data[32:] = original_bn1.running_mean.data  
+                self.visual_encoder.bn1.running_var.data[:32] = original_bn1.running_var.data  
+                self.visual_encoder.bn1.running_var.data[32:] = original_bn1.running_var.data  
+
+    def _get_visual_encoder_layers(self):  
+        """获取视觉编码器各层的输出通道数"""  
+        return [  
+            ('conv1', self.visual_encoder.conv1.out_channels),  
+            ('layer1', self.visual_encoder.layer1[-1].conv3.out_channels),  
+            ('layer2', self.visual_encoder.layer2[-1].conv3.out_channels),  
+            ('layer3', self.visual_encoder.layer3[-1].conv3.out_channels),  
+            ('layer4', self.visual_encoder.layer4[-1].conv3.out_channels)  
+        ]  
+
+    def extract_features(self, x):  
+        """提取CLIP的各层特征"""  
+        features = []  
+        device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')  
+        x = x.to(device)  
+        
+        with torch.no_grad():  
+            self.visual_encoder.eval()  
+            
+            # 第一层：conv1 + bn1 + act1  
+            x = self.visual_encoder.conv1(x)  # 224 -> 112  
+            x = self.visual_encoder.bn1(x)  
+            x = self.visual_encoder.act1(x)  
+            # x = self.visual_encoder.maxpool(x)  # 112 -> 56  
+            features.append(x)  
+            
+            # ResNet块  
+            x = self.visual_encoder.layer1(x)  # 56 -> 56  
+            features.append(x)  
+            
+            x = self.visual_encoder.layer2(x)  # 56 -> 28  
+            features.append(x)  
+            
+            x = self.visual_encoder.layer3(x)  # 28 -> 14  
+            features.append(x)  
+            
+            x = self.visual_encoder.layer4(x)  # 14 -> 7  
+            features.append(x)  
+            
+            # # 打印每层特征的尺寸以便调试  
+            # for i, f in enumerate(features):  
+            #     print(f"Feature {i} shape: {f.shape}")  
+        
+        return features  
 
     def forward(self, x):  
         """前向传播"""  
-        # 输入验证  
         self._validate_input(x)  
-
-        # CLIP特征提取  
-        visual_features = self.extract_features(x)  
-
-        # 使用autocast进行后续处理  
-        with torch.cuda.amp.autocast():  
-            # 特征重塑和转换  
-            B, D = visual_features.shape  
-            x = visual_features.reshape(B, D, 1, 1)  
-            x = self.feature_transform(x)  
-            # 将特征图调整到7x7  
-            x = F.interpolate(x, size=(7, 7), mode='bilinear', align_corners=False)  
-
-            # 应用空间注意力  
-            attention_weights = self.spatial_attention(x)  
-            x = x * attention_weights  
-
-            # 存储用于辅助损失的特征  
-            aux_feature = x.clone() if self.use_aux_loss else None  
-
-            # 解码器路径  
-            intermediate_features = []  
-            for decoder_block in self.decoder_blocks:  
-                x = decoder_block(x)  
-                intermediate_features.append(x)  
-
-            # 生成主输出  
-            main_output = self.final_conv(intermediate_features[-1])  
-            outputs = {'main': main_output}  
-
-            # 生成辅助输出  
-            if self.use_aux_loss and aux_feature is not None:  
-                aux_output = self.aux_head(aux_feature)  
-                outputs['aux'] = F.interpolate(  
-                    aux_output,  
-                    size=(self.input_size, self.input_size),  
-                    mode='bilinear',  
-                    align_corners=False  
-                )  
-               
-                # 添加深度监督  
-                for idx, feat in enumerate(intermediate_features[:-1]):  
-                    aux_out = nn.Conv2d(feat.shape[1], self.num_classes, 1).to(feat.device)(feat)  
-                    outputs[f'aux_{idx}'] = F.interpolate(  
-                        aux_out,  
-                        size=(self.input_size, self.input_size),  
-                        mode='bilinear',  
-                        align_corners=False  
-                    )  
+        
+        # 提取CLIP的各层特征  
+        features = self.extract_features(x)  
+        
+        # 对各层特征进行转换  
+        features = [  
+            transform(f)  
+            for transform, f in zip(self.feature_transforms, features)  
+        ]  
+        
+        # 编码器特征用于跳跃连接  
+        skips = features[:-1]  
+        x = features[-1]  
+        
+        # 存储辅助特征  
+        aux_feature = x.clone() if self.use_aux_loss else None  
+        
+        # 解码器路径，结合跳跃连接  
+        for i, (decoder_block, skip) in enumerate(zip(self.decoder_blocks, reversed(skips))):  
+            # 打印当前特征尺寸  
+            # print(f"Before decoder {i}:")  
+            # print(f"x shape: {x.shape}")  
+            # print(f"skip shape: {skip.shape}")  
             
-            # 确保所有输出都参与计算  
-            dummy_sum = sum([output.mean() * 0 for output in outputs.values()])  
-            outputs['main'] = outputs['main'] + dummy_sum  
-
-            return outputs  
+            x = decoder_block(x, skip)  
+            
+            # # 打印解码后的特征尺寸  
+            # print(f"After decoder {i}: {x.shape}")  
+        
+        # 主输出  
+        main_output = self.final_conv(x)  
+        
+        # 确保输出尺寸正确  
+        if main_output.shape[-2:] != (self.input_size, self.input_size):  
+            main_output = F.interpolate(  
+                main_output,  
+                size=(self.input_size, self.input_size),  
+                mode='bilinear',  
+                align_corners=False  
+            )  
+        
+        outputs = {'main': main_output}  
+        
+        # 辅助输出  
+        if self.use_aux_loss and aux_feature is not None:  
+            aux_output = self.aux_head(aux_feature)  
+            outputs['aux'] = F.interpolate(  
+                aux_output,  
+                size=(self.input_size, self.input_size),  
+                mode='bilinear',  
+                align_corners=False  
+            )  
+        
+        return outputs  
 
     def _validate_input(self, x):  
         """验证输入数据"""  
@@ -243,39 +304,17 @@ class RemoteClipUNet(nn.Module):
         if hasattr(self, 'visual_encoder'):  
             self.visual_encoder.eval()  
         return self  
-    
-    def _init_clip_model(self, model_name, ckpt_path):  
-        """初始化CLIP模型"""  
-        try:  
-            device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')  
-            model, _, self.preprocess_func = open_clip.create_model_and_transforms(  
-                model_name,  
-                device=device,  
-                pretrained=ckpt_path is None  
-            )  
-
-            if ckpt_path:  
-                ckpt = torch.load(ckpt_path, map_location=device)  
-                model.load_state_dict(ckpt)  
-
-            self.visual_encoder = model.visual.float()  
-            self.visual_encoder.eval()  
-
-            # 冻结CLIP参数  
-            for param in self.visual_encoder.parameters():  
-                param.requires_grad = False  
-
-        except Exception as e:  
-            raise RuntimeError(f"CLIP模型加载失败: {str(e)}")  
 
     def initialize_weights(self):  
         """初始化模型权重"""  
+        visual_encoder_modules = list(self.visual_encoder.modules())  
         for m in self.modules():  
             if isinstance(m, (nn.Conv2d, nn.ConvTranspose2d)):  
-                if m not in self.visual_encoder.modules():  
+                if m not in visual_encoder_modules:  
                     nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')  
                     if m.bias is not None:  
                         nn.init.constant_(m.bias, 0)  
             elif isinstance(m, nn.BatchNorm2d):  
-                nn.init.constant_(m.weight, 1)  
-                nn.init.constant_(m.bias, 0)
+                if m not in visual_encoder_modules:  
+                    nn.init.constant_(m.weight, 1)  
+                    nn.init.constant_(m.bias, 0)

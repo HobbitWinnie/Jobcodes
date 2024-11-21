@@ -1,6 +1,8 @@
 import os
 from PIL import Image
 from torch.utils.data import Dataset
+import torch
+import numpy as np  
 
 # 数据集类
 class WHURS19DatasetLoader(Dataset):
@@ -26,8 +28,17 @@ class WHURS19DatasetLoader(Dataset):
         image_path = self.image_paths[idx]
         label = self.labels[idx]
         image = Image.open(image_path).convert('RGB')
-        processed_image = self.preprocess_func(image)  
+
+        if self.preprocess_func is not None:
+            image = self.preprocess_func(image)  
         
-        return processed_image, label, image_path
+        else:
+            image = image.resize((224, 224))
+            
+            # 转换为numpy数组并调整通道顺序 (H,W,C) -> (C,H,W)  
+            image = np.array(image).transpose(2, 0, 1)  
+            image = torch.from_numpy(image).float() 
+        
+        return image, label, image_path
 
         # return processed_image, label, image, image_path #这一行是few-shot加载support dataset时修改的

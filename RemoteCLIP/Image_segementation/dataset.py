@@ -1,9 +1,10 @@
-import numpy as np  
 import torch  
+import numpy as np  
 import random  
+from PIL import Image  
+from torchvision import transforms  
 from torch.utils.data import Dataset, DataLoader, random_split  
-import random  
-from torch.utils.data.distributed import DistributedSampler  
+from torch.utils.data import Dataset  
 
 
 class RemoteSensingDataset(Dataset):  
@@ -11,11 +12,11 @@ class RemoteSensingDataset(Dataset):
     def __init__(self, image, labels, patch_size, num_patches, preprocess_func=None):  
         """  
         Args:  
-            image: 输入图像 [C, H, W]  
-            labels: 标签图像 [H, W]  
+            image: 输入图像，形状为 [C, H, W]，dtype=float32  
+            labels: 标签图像，形状为 [H, W]  
             patch_size: 图像块大小  
             num_patches: 随机采样的图像块数量  
-            preprocess_func: 数据预处理  
+            preprocess_func: 数据预处理函数  
         """  
         self.image = image  
         self.labels = labels  
@@ -43,41 +44,68 @@ class RemoteSensingDataset(Dataset):
 
     def __getitem__(self, idx):  
         MAX_ATTEMPTS = 20  # 最大尝试次数  
-        
+
         for attempt in range(MAX_ATTEMPTS):  
             # 随机选择图像块位置  
             x = random.randint(0, self.w - self.patch_size)  
             y = random.randint(0, self.h - self.patch_size)  
 
-            # 提取图像块  
-            image_patch = self.image[:3, y:y+self.patch_size, x:x+self.patch_size]  
-                        
-            # 应用数据增强
-            if self.preprocess_func is not None:
-                image_patch = self.preprocess_func(image_patch)
+            # 提取图像块，形状为 (C, patch_size, patch_size)  
+            image_patch = self.image[:, y:y+self.patch_size, x:x+self.patch_size]  
+            # 将形状转换为 (patch_size, patch_size, C)  
+            image_patch = np.transpose(image_patch, (1, 2, 0))  
             
+            # # 确保数据为 RGB 图像（取前3个通道）  
+            # if image_patch.shape[2] > 3:  
+            #     image_patch = image_patch[:, :, :3]  
+
+            # # 确定数据的数值范围并进行转换  
+            # max_value = image_patch.max()  
+            # if max_value <= 1.0:  
+            #     # 数据范围在 [0,1]，转换为 [0,255]  
+            #     image_patch = (image_patch * 255).astype('uint8')  
+            # else:  
+            #     # 数据范围在 [0,255]  
+            #     image_patch = image_patch.astype('uint8')  
+
+            # 将 NumPy 数组转换为 PIL.Image 对象  
+            image_patch = Image.fromarray(image_patch, mode='RGB')  
+
+            # 应用数据增强  
+            if self.preprocess_func is not None:  
+                image_patch = self.preprocess_func(image_patch)  
+                # 预处理后应得到 Tensor，形状为 (C, H, W)  
+                if not isinstance(image_patch, torch.Tensor):  
+                    # 如果预处理后仍是 PIL.Image，需转换为 Tensor  
+                    image_patch = transforms.ToTensor()(image_patch)  
+            else:  
+                # 如果没有提供预处理函数，直接转换为 Tensor  
+                image_patch = transforms.ToTensor()(image_patch)  
+
             if self.labels is not None:  
                 # 提取标签patch  
                 label_patch = self.labels[y:y+self.patch_size, x:x+self.patch_size]  
-                
+
                 # 计算0像素值的比例  
                 zero_ratio = (label_patch == 0).sum() / (self.patch_size * self.patch_size)  
-                
-                # 如果比例大于30%，则返回该patch  
-                if zero_ratio > 0.3:  
-                    image_patch = torch.from_numpy(image_patch).float()  
+
+                # 如果比例小于30%，则返回该patch  
+                if zero_ratio < 0.3:  
                     label_patch = torch.from_numpy(label_patch).long()  
                     validate_labels(label_patch)  
                     return image_patch, label_patch  
             else:  
-                image_patch = torch.from_numpy(image_patch).float()  
                 return image_patch  
-                
-        # 如果达到最大尝试次数仍未找到合适的patch，使用最后一个采样的patch  
-        image_patch = torch.from_numpy(image_patch).float()  
-        label_patch = torch.from_numpy(label_patch).long()  
-        validate_labels(label_patch)  
-        return image_patch, label_patch
+
+        # 如果达到最大尝试次数仍未找到合适的patch，则返回最后一次尝试的patch  
+        if self.labels is not None:  
+            # 重新提取 label_patch，防止变量未定义  
+            label_patch = self.labels[y:y+self.patch_size, x:x+self.patch_size]  
+            label_patch = torch.from_numpy(label_patch).long()  
+            validate_labels(label_patch)  
+            return image_patch, label_patch  
+        else:  
+            return image_patch  
 
 def validate_labels(labels: torch.Tensor, num_classes: int = 9) -> None:  
     """验证标签值是否在有效范围内"""  
@@ -85,9 +113,7 @@ def validate_labels(labels: torch.Tensor, num_classes: int = 9) -> None:
     min_label = unique_labels.min().item()  
     max_label = unique_labels.max().item()  
     if min_label < 0 or max_label >= num_classes:  
-        raise ValueError(f"Labels must be in range [0, {num_classes-1}], "  
-                      f"but got range [{min_label}, {max_label}]")  
-
+        raise ValueError(f"Labels must be in range [0, {num_classes-1}], but got range [{min_label}, {max_label}]")
 
 def create_dataloaders(image, labels, patch_size, num_patches, batch_size,  
                       train_ratio=0.8, num_workers=4, preprocess_func=None):  

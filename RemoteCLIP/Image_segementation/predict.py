@@ -9,7 +9,7 @@ from tqdm import tqdm
 import numpy as np  
 
 from config import get_config, setup_logging, setup_device  
-from model import RomoClipUNet  # 更改为你的模型类名  
+from model import UNetWithCLIP  # 更改为你的模型类名  
 from utils import load_and_save_data  
 from dataset import split_image_into_patches, reconstruct_image_from_patches  
 
@@ -222,7 +222,7 @@ def load_model(config, device):
         logging.info("CLIP model loaded successfully")  
         
         # 初始化模型  
-        model = RomoClipUNet(clip_model=clip_model, **config['model'])  
+        model = UNetWithCLIP(clip_model=clip_model, **config['model'])  
         
         # 加载预训练权重  
         model_path = config.get_model_path()  

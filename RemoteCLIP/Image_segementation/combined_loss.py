@@ -68,12 +68,12 @@ class CombinedLoss(nn.Module):
     """  
     def __init__(  
         self,  
-        num_classes: int,  
-        class_weights: torch.Tensor = None,  
-        weights: list = [0.6, 0.4],  
-        ignore_index: int = 0,  
-        epsilon: float = 1e-6,  
-        reduction: str = 'mean'  
+        num_classes,  
+        class_weights = None,  
+        weights = [0.6, 0.4],  
+        ignore_index = 0,  
+        epsilon = 1e-6,  
+        reduction = 'mean'  
     ):  
         """  
         初始化组合损失函数  

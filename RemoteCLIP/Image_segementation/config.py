@@ -18,7 +18,7 @@ class Config:
                 'model': {  
                     'save_dir': '/home/nw/Codes/RemoteCLIP/Image_segementation/model_save',  
                     'best_model': 'RemoteCLIP_UNet_best_model.pth',  
-                    'clip_ckpt': '/home/nw/Assets/RemoteCLIP/ckpt/RemoteCLIP-ViT-B-32.pt',  
+                    'clip_ckpt': '/home/nw/Assets/RemoteCLIP/ckpt/RemoteCLIP-RN50.pt',  
                 },  
                 'input': {  
                     'train_image': 'GF2_train_image.tif',  
@@ -37,7 +37,7 @@ class Config:
                 'in_channels': 4,  
                 'initial_features': 128,  
                 'dropout_rate': 0.2,  
-                'model_name': 'ViT-B/32'
+                'model_name': 'RN50'
             },  
             'training': {  
                 'epochs': 2000,  
@@ -50,7 +50,7 @@ class Config:
                 'ignore_index': 0,
                 'val_frequency': 10,
                 'max_grad_norm': 0.5,  # 梯度裁剪阈值  
-                'scheduler_T0': 10,    # CosineAnnealingWarmRestarts的初始周期  
+                'scheduler_T0': 50,    # CosineAnnealingWarmRestarts的初始周期  
                 'scheduler_T_mult': 2, # 周期倍增因子 
                 'loss_weights': [0.7, 0.3],  # CE损失和Dice损失的权重  
                 'loss_smooth': 1e-5,         # 平滑参数  

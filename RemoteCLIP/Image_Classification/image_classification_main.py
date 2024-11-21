@@ -42,11 +42,11 @@ if __name__ == "__main__":
     model_name = "ViT-L-14"  
 
     # choose a classifier
-    model_type = 'ml-knn'
+    model_type = 'knn'
 
     # general classification parameters
     DATA_ROOT_DIR = '/home/Dataset/nw'
-    train_dataset = 'Common_Datasets/Classification-12/WHU-RS19'
+    train_dataset = 'Classification/WHU-RS19'
     train_data_path = os.path.join(DATA_ROOT_DIR, train_dataset)
 
     # few-shot classification parameters

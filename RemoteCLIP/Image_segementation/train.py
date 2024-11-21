@@ -8,13 +8,12 @@ from datetime import datetime
 import numpy as np
 import json
 import torch.nn as nn
-import torch.nn.functional as F
 from torch.cuda.amp import GradScaler, autocast
 from utils import load_and_save_data, EarlyStopping
 from dataset import create_dataloaders
-from model import RemoteClipUNet
+from model import UNetWithCLIP
 from config import get_config, setup_logging
-from CombinedLoss import CombinedLoss
+from combined_loss import CombinedLoss
 import gc  
 
 def analyze_class_distribution(labels):  
@@ -63,12 +62,12 @@ def init_training(config, labels):
 
     # 分析数据分布  
     distribution, class_weights = analyze_class_distribution(labels)  
-    # logging.info(f"类别分布: {json.dumps(distribution, indent=2)}")  
-    # logging.info(f"类别权重: {class_weights}")  
+    logging.info(f"类别分布: {json.dumps(distribution, indent=2)}")  
+    logging.info(f"类别权重: {class_weights}")  
 
     # 初始化模型  
     num_classes = config['dataset']['num_classes']  
-    model = RemoteClipUNet(  
+    model = UNetWithCLIP(  
         model_name=config['model']['model_name'],  
         ckpt_path=config['paths']['model']['clip_ckpt'],  
         num_classes=num_classes,  
@@ -231,7 +230,6 @@ def train_loop(model, train_loader, val_loader, criterion, optimizer, scheduler,
                 
                 with autocast():  
                     outputs = model(images)  
-                    # loss, loss_info = criterion(outputs, masks, progress)  
                     loss, loss_info = criterion(outputs, masks)  
 
 
@@ -375,6 +373,7 @@ def main():
             batch_size=config['training']['batch_size'],
             train_ratio=config['dataset']['train_val_split'],
             num_workers=config['dataset']['num_workers'],
+            preprocess_func = model.preprocess_func
         )
 
         if torch.cuda.device_count() > 1:  

@@ -1,14 +1,10 @@
 import os
 import logging
-from typing import Tuple, Dict, List, Union
 from datetime import datetime
 import numpy as np
-import torch
-import torch.nn as nn
-import torch.nn.functional as F
 import rasterio
 
-from CombinedLoss import dice_coefficient
+from combined_loss import dice_coefficient
 
 # 设置日志
 logging.basicConfig(
@@ -148,59 +144,6 @@ def load_and_save_data(image_path, label_path, output_dir, normalize = True):
         logging.info(f"Data processing completed. Results saved to {output_dir}")  
         
     return image, labels, image_meta  
-
-def calculate_metrics(  
-    pred: torch.Tensor,  
-    target: torch.Tensor,  
-    num_classes: int,  
-    ignore_index: int = 0  
-) -> Dict[str, float]:  
-    """计算评估指标，只考虑target中非ignore_index的区域  
-    
-    Args:  
-        pred: 模型预测结果 [B, C, H, W]  
-        target: 真实标签 [B, H, W]  
-        num_classes: 类别数量  
-        ignore_index: 忽略的类别索引  
-    
-    Returns:  
-        包含accuracy、mean_iou和dice系数的字典  
-    """  
-    pred_cls = pred.argmax(dim=1)  
-    
-    # 创建有效像素掩码  
-    valid_pixels = target != ignore_index  
-    
-    # 计算总体准确率(只考虑有效区域)  
-    accuracy = (pred_cls[valid_pixels] == target[valid_pixels]).float().mean()  
-    
-    # 计算IoU  
-    ious = []  
-    for cls in range(num_classes):  
-        if cls == ignore_index:  
-            continue  
-            
-        # 在有效区域内计算预测和目标掩码  
-        pred_mask = (pred_cls == cls) & valid_pixels  
-        target_mask = (target == cls) & valid_pixels  
-        
-        intersection = pred_mask.float().sum()  
-        union = (pred_mask | target_mask).float().sum()  
-        
-        # 避免除零错误  
-        iou = intersection / (union + 1e-8) if union > 0 else torch.tensor(0.0)  
-        ious.append(iou.item())  
-    
-    mean_iou = np.mean(ious) if ious else 0.0  
-    
-    # 计算Dice系数(假设dice_coefficient函数已经正确处理了ignore_index)  
-    dice = dice_coefficient(F.softmax(pred, dim=1), target, ignore_index)  
-    
-    return {  
-        'accuracy': accuracy.item(),  
-        'mean_iou': mean_iou,  
-        'dice': dice.item()  
-    }
 
 class EarlyStopping:
     """早停机制
