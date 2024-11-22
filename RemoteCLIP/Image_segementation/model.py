@@ -67,6 +67,7 @@ class UNetWithCLIP(nn.Module):
         
         self.input_size = input_size  
         self.use_aux_loss = use_aux_loss  
+        self.preprocess_func = None
         
         # 初始化 CLIP 模型  
         self._init_clip_model(model_name, ckpt_path)  
@@ -220,10 +221,6 @@ class UNetWithCLIP(nn.Module):
             
             x = self.visual_encoder.layer4(x)  # 14 -> 7  
             features.append(x)  
-            
-            # # 打印每层特征的尺寸以便调试  
-            # for i, f in enumerate(features):  
-            #     print(f"Feature {i} shape: {f.shape}")  
         
         return features  
 
@@ -249,15 +246,7 @@ class UNetWithCLIP(nn.Module):
         
         # 解码器路径，结合跳跃连接  
         for i, (decoder_block, skip) in enumerate(zip(self.decoder_blocks, reversed(skips))):  
-            # 打印当前特征尺寸  
-            # print(f"Before decoder {i}:")  
-            # print(f"x shape: {x.shape}")  
-            # print(f"skip shape: {skip.shape}")  
-            
             x = decoder_block(x, skip)  
-            
-            # # 打印解码后的特征尺寸  
-            # print(f"After decoder {i}: {x.shape}")  
         
         # 主输出  
         main_output = self.final_conv(x)  

@@ -39,7 +39,7 @@ def analyze_class_distribution(labels):
     
     return distribution, weights.tolist()  
 
-def init_training(config, labels):  
+def init_training(config):  
     """初始化训练组件"""  
     # 设置设备并确保cudnn基准测试  
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')  
@@ -59,11 +59,6 @@ def init_training(config, labels):
     setup_logging(exp_dir / 'training.log')  
     with open(exp_dir / 'config.json', 'w') as f:  
         json.dump(config.config, f, indent=4)  
-
-    # 分析数据分布  
-    distribution, class_weights = analyze_class_distribution(labels)  
-    logging.info(f"类别分布: {json.dumps(distribution, indent=2)}")  
-    logging.info(f"类别权重: {class_weights}")  
 
     # 初始化模型  
     num_classes = config['dataset']['num_classes']  
@@ -95,7 +90,6 @@ def init_training(config, labels):
     # 初始化损失函数  
     criterion = CombinedLoss(  
         num_classes=num_classes,  
-        class_weights=class_weights,  
     ).to(device)  
 
     return device, exp_dir, model, optimizer, scheduler, criterion  
@@ -344,32 +338,14 @@ def main():
     try:
         # 加载配置
         config = get_config()
-        
-        # 加载数据
-        print("开始加载数据...")
-        image_path = Path(config['paths']['data']['images']) / config['paths']['input']['train_image']
-        label_path = Path(config['paths']['data']['images']) / config['paths']['input']['train_label']
-        
-        image, labels, _ = load_and_save_data(
-            image_path=image_path,
-            label_path=label_path,
-            output_dir=config['paths']['data']['process']
-        )
-        
-        # 分析数据分布
-        distribution, _ = analyze_class_distribution(labels)
-        print("\n数据集类别分布:")
-        print(json.dumps(distribution, indent=2))
-
+    
         # 初始化训练组件
-        device, exp_dir, model, optimizer, scheduler, criterion = init_training(config, labels)
+        device, exp_dir, model, optimizer, scheduler, criterion = init_training(config)
 
         # 创建数据加载器
         train_loader, val_loader = create_dataloaders(
-            image=image,
-            labels=labels,
-            patch_size=config['dataset']['patch_size'],
-            num_patches=config['dataset']['patch_number'],
+            image_dir= Path(config['paths']['data']['image_dir']),
+            labels_dir=Path(config['paths']['data']['label_dir']),
             batch_size=config['training']['batch_size'],
             train_ratio=config['dataset']['train_val_split'],
             num_workers=config['dataset']['num_workers'],

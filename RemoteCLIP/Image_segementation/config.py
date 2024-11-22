@@ -13,7 +13,9 @@ class Config:
                 'data': {  
                     'images': '/home/Dataset/nw/Segmentation/CpeosTest/images',  
                     'process': '/home/Dataset/nw/Segmentation/CpeosTest/image_process',  
-                    'results': '/home/Dataset/nw/Segmentation/CpeosTest/result'  
+                    'results': '/home/Dataset/nw/Segmentation/CpeosTest/result',
+                    'image_dir': '/home/Dataset/nw/Segmentation/CpeosTest/train/images',
+                    'label_dir': '/home/Dataset/nw/Segmentation/CpeosTest/train/labels'
                 },  
                 'model': {  
                     'save_dir': '/home/nw/Codes/RemoteCLIP/Image_segementation/model_save',  
@@ -28,7 +30,7 @@ class Config:
             },  
             'dataset': {  
                 'patch_size': 224,  
-                'patch_number': 3000,  
+                'patch_number': 5000,  
                 'train_val_split': 0.8,  
                 'num_classes': 9,  
                 'num_workers': 4  

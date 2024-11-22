@@ -69,7 +69,6 @@ class CombinedLoss(nn.Module):
     def __init__(  
         self,  
         num_classes,  
-        class_weights = None,  
         weights = [0.6, 0.4],  
         ignore_index = 0,  
         epsilon = 1e-6,  
@@ -88,18 +87,9 @@ class CombinedLoss(nn.Module):
         """  
         super().__init__()  
         self.num_classes = num_classes  
-        
-        # 初始化类别权重  
-        if class_weights is None:  
-            class_weights = torch.ones(num_classes)  
-        elif not isinstance(class_weights, torch.Tensor):  
-            class_weights = torch.FloatTensor(class_weights)  
-        
-        self.register_buffer('class_weights', class_weights)  
-        
+
         # 初始化CrossEntropy损失  
         self.ce = nn.CrossEntropyLoss(  
-            weight=class_weights,  
             ignore_index=ignore_index,  
             reduction=reduction  
         )  
