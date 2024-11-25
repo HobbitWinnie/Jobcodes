@@ -1,43 +1,44 @@
 import torch
 import torch.optim as optim
 import logging
-from torch.optim.lr_scheduler import CosineAnnealingWarmRestarts
-from pathlib import Path
 import time
-from datetime import datetime
 import numpy as np
 import json
 import torch.nn as nn
+import gc  
+import os
+from torch.optim.lr_scheduler import CosineAnnealingWarmRestarts
+from pathlib import Path
+from datetime import datetime
 from torch.cuda.amp import GradScaler, autocast
-from utils import load_and_save_data, EarlyStopping
 from dataset import create_dataloaders
 from model import UNetWithCLIP
-from config import get_config, setup_logging
+from config import get_config
 from combined_loss import CombinedLoss
-import gc  
 
-def analyze_class_distribution(labels):  
-    """分析数据集类别分布并计算权重"""  
-    unique, counts = np.unique(labels, return_counts=True)  
-    total = np.sum(counts)  
-    distribution = {}  
-    weights = np.zeros_like(unique, dtype=np.float32)  
+def setup_logging(log_dir: str = None):  
+    """设置日志配置"""  
+    # 清除根记录器的处理器，防止重复添加  
+    logging.getLogger().handlers.clear()  
     
-    for i, (cls, count) in enumerate(zip(unique, counts)):  
-        percentage = (count / total) * 100  
-        distribution[int(cls)] = {  
-            'count': int(count),  
-            'percentage': float(percentage)  
-        }  
-        # 使用改进的权重计算方法  
-        weights[i] = 1 / (np.log(count + 1) + 1)  
+    # 设置日志级别和格式  
+    logging.basicConfig(  
+        level=logging.INFO,  
+        format='%(asctime)s - %(levelname)s - %(message)s'  
+    )  
     
-    # 归一化权重  
-    weights = weights / np.sum(weights) * len(weights)  
-    # 调整背景类权重  
-    weights[0] = min(weights[0], 0.1)  
-    
-    return distribution, weights.tolist()  
+    # 如果指定了日志目录，添加文件处理器  
+    if log_dir:  
+        import os  
+        from datetime import datetime  
+        os.makedirs(log_dir, exist_ok=True)  
+        file_handler = logging.FileHandler(  
+            os.path.join(log_dir, f"app_{datetime.now():%Y%m%d_%H%M%S}.log")  
+        )  
+        file_handler.setFormatter(  
+            logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')  
+        )  
+        logging.getLogger().addHandler(file_handler)  
 
 def init_training(config):  
     """初始化训练组件"""  
@@ -90,15 +91,18 @@ def init_training(config):
     # 初始化损失函数  
     criterion = CombinedLoss(  
         num_classes=num_classes,  
+        weights=config['training']['loss_weights'],
+        ignore_index = config['training']['ignore_index'],
+        epsilon = config['training']['loss_smooth']
     ).to(device)  
 
     return device, exp_dir, model, optimizer, scheduler, criterion  
 
-def validate_model(model, val_loader, criterion, device, num_classes, progress):  
+def validate_model(model, val_loader, criterion, device, num_classes):  
     """验证模型性能"""  
     model.eval()  
     val_loss = 0  
-    loss_components = {'ce_loss': 0, 'dice_loss': 0}  
+    loss_components = {'focal_loss': 0, 'dice_loss': 0}  
     class_metrics = {i: {'correct': 0, 'total': 0} for i in range(num_classes)}  
     confusion_matrix = np.zeros((num_classes, num_classes))  
 
@@ -111,7 +115,7 @@ def validate_model(model, val_loader, criterion, device, num_classes, progress):
                 loss, loss_info = criterion(outputs, masks)  
             
             val_loss += loss.item()  
-            loss_components['ce_loss'] += loss_info['ce_loss']  
+            loss_components['focal_loss'] += loss_info['focal_loss']  
             loss_components['dice_loss'] += loss_info['dice_loss']  
             
             preds = outputs['main'].argmax(1) if isinstance(outputs, dict) else outputs.argmax(1)  
@@ -134,7 +138,7 @@ def validate_model(model, val_loader, criterion, device, num_classes, progress):
     # 计算平均损失  
     num_batches = len(val_loader)  
     avg_loss = val_loss / num_batches  
-    avg_ce_loss = loss_components['ce_loss'] / num_batches  
+    avg_focal_loss = loss_components['focal_loss'] / num_batches  
     avg_dice_loss = loss_components['dice_loss'] / num_batches  
 
     # 计算每个类别的性能指标  
@@ -169,7 +173,7 @@ def validate_model(model, val_loader, criterion, device, num_classes, progress):
     
     validation_results = {  
         'loss': avg_loss,  
-        'ce_loss': avg_ce_loss,  
+        'focal_loss': avg_focal_loss,  
         'dice_loss': avg_dice_loss,  
         'accuracy': accuracy,  
         'mean_iou': mean_iou,  
@@ -182,11 +186,6 @@ def validate_model(model, val_loader, criterion, device, num_classes, progress):
 def train_loop(model, train_loader, val_loader, criterion, optimizer, scheduler, device, config, exp_dir):  
     """训练循环"""  
     scaler = GradScaler()  
-    early_stopping = EarlyStopping(  
-        patience=config['training']['patience'],  
-        mode='max',  
-        min_delta=1e-4  
-    )  
     best_miou = float('-inf')  
     total_epochs = config['training']['epochs']  
     max_grad_norm = config['training'].get('max_grad_norm', 1.0)  
@@ -194,10 +193,10 @@ def train_loop(model, train_loader, val_loader, criterion, optimizer, scheduler,
     # 记录训练历史  
     metrics_history = {  
         'train_loss': [],  
-        'train_ce_loss': [],  
+        'train_focal_loss': [],  
         'train_dice_loss': [],  
         'val_loss': [],  
-        'val_ce_loss': [],  
+        'val_focal_loss': [],  
         'val_dice_loss': [],  
         'val_miou': [],  
         'val_accuracy': [],  
@@ -210,11 +209,10 @@ def train_loop(model, train_loader, val_loader, criterion, optimizer, scheduler,
         for epoch in range(total_epochs):  
             model.train()  
             epoch_loss = 0  
-            epoch_ce_loss = 0  
+            epoch_focal_loss = 0  
             epoch_dice_loss = 0  
             batch_count = 0  
             epoch_start = time.time()  
-            progress = (epoch + 1) / total_epochs  
             current_lr = optimizer.param_groups[0]['lr']  
             
             for batch in train_loader:  
@@ -242,7 +240,7 @@ def train_loop(model, train_loader, val_loader, criterion, optimizer, scheduler,
                 
                 # 更新损失统计  
                 epoch_loss += loss.item()  
-                epoch_ce_loss += loss_info['ce_loss']  
+                epoch_focal_loss += loss_info['focal_loss']  
                 epoch_dice_loss += loss_info['dice_loss']  
                 batch_count += 1  
 
@@ -252,7 +250,7 @@ def train_loop(model, train_loader, val_loader, criterion, optimizer, scheduler,
 
             # 计算平均损失  
             avg_loss = epoch_loss / batch_count  
-            avg_ce_loss = epoch_ce_loss / batch_count  
+            avg_focal_loss = epoch_focal_loss / batch_count  
             avg_dice_loss = epoch_dice_loss / batch_count  
             epoch_time = time.time() - epoch_start  
             
@@ -261,60 +259,52 @@ def train_loop(model, train_loader, val_loader, criterion, optimizer, scheduler,
             
             # 记录训练指标  
             metrics_history['train_loss'].append(avg_loss)  
-            metrics_history['train_ce_loss'].append(avg_ce_loss)  
+            metrics_history['train_focal_loss'].append(avg_focal_loss)  
             metrics_history['train_dice_loss'].append(avg_dice_loss)  
             metrics_history['learning_rate'].append(current_lr)  
 
             # 验证  
-            if (epoch + 1) % config['training']['val_frequency'] == 0:  
-                val_metrics = validate_model(  
-                    model, val_loader, criterion, device,  
-                    config['dataset']['num_classes'], progress  
-                )  
+            val_metrics = validate_model(  
+                model, val_loader, criterion, device,  
+                config['dataset']['num_classes']  
+            )  
 
-                # 更新验证指标历史  
-                metrics_history['val_loss'].append(val_metrics['loss'])  
-                metrics_history['val_ce_loss'].append(val_metrics['ce_loss'])  
-                metrics_history['val_dice_loss'].append(val_metrics['dice_loss'])  
-                metrics_history['val_miou'].append(val_metrics['mean_iou'])  
-                metrics_history['val_accuracy'].append(val_metrics['accuracy'])  
+            # 更新验证指标历史  
+            metrics_history['val_loss'].append(val_metrics['loss'])  
+            metrics_history['val_focal_loss'].append(val_metrics['focal_loss'])  
+            metrics_history['val_dice_loss'].append(val_metrics['dice_loss'])  
+            metrics_history['val_miou'].append(val_metrics['mean_iou'])  
+            metrics_history['val_accuracy'].append(val_metrics['accuracy'])  
 
-                # 输出详细的训练信息  
-                logging.info(  
-                    f"\nEpoch {epoch+1}/{total_epochs} [{epoch_time:.2f}s]\n"  
-                    f"训练损失: {avg_loss:.4f} (Ce: {avg_ce_loss:.4f}, Dice: {avg_dice_loss:.4f})\n"  
-                    f"验证损失: {val_metrics['loss']:.4f} (Ce: {val_metrics['ce_loss']:.4f}, "  
-                    f"Dice: {val_metrics['dice_loss']:.4f})\n"  
-                    f"验证指标: Acc = {val_metrics['accuracy']:.4f}, mIoU = {val_metrics['mean_iou']:.4f}\n"  
-                    f"学习率: {current_lr:.6f}"  
-                )  
+            # 输出详细的训练信息  
+            logging.info(  
+                f"Epoch {epoch + 1}/{total_epochs} [{epoch_time:.2f}s], "  
+                f"Training: [{avg_loss:.4f} (Focal: {avg_focal_loss:.4f}, Dice: {avg_dice_loss:.4f})], "  
+                f"Validation: [{val_metrics['loss']:.4f} (Focal: {val_metrics['focal_loss']:.4f}, Dice: {val_metrics['dice_loss']:.4f}), "  
+                f"Acc = {val_metrics['accuracy']:.4f}, mIoU = {val_metrics['mean_iou']:.4f}], LR: {current_lr:.6f}"  
+            )
 
-                # 保存检查点  
-                checkpoint = {  
-                    'epoch': epoch + 1,  
-                    'model_state_dict': model.state_dict(),  
-                    'optimizer_state_dict': optimizer.state_dict(),  
-                    'scheduler_state_dict': scheduler.state_dict(),  
-                    'scaler_state_dict': scaler.state_dict(),  
-                    'best_miou': best_miou,  
-                    'metrics_history': metrics_history,  
-                    'config': config.config  
-                }  
-                
-                # 保存最佳模型  
-                if val_metrics['mean_iou'] > best_miou:  
-                    best_miou = val_metrics['mean_iou']  
-                    torch.save(checkpoint, exp_dir / 'best_model.pth')  
-                    logging.info(f"保存最佳模型 (mIoU: {best_miou:.4f})")  
+            # 保存检查点  
+            checkpoint = {  
+                'epoch': epoch + 1,  
+                'model_state_dict': model.state_dict(),  
+                'optimizer_state_dict': optimizer.state_dict(),  
+                'scheduler_state_dict': scheduler.state_dict(),  
+                'scaler_state_dict': scaler.state_dict(),  
+                'best_miou': best_miou,  
+                'metrics_history': metrics_history,  
+                'config': config.config  
+            }  
+            
+            # 保存最佳模型  
+            if val_metrics['mean_iou'] > best_miou:  
+                best_miou = val_metrics['mean_iou']  
+                torch.save(checkpoint, exp_dir / 'best_model.pth')  
+                logging.info(f"保存最佳模型 (mIoU: {best_miou:.4f})")  
 
-                # 保存训练指标  
-                with open(exp_dir / 'metrics_history.json', 'w') as f:  
-                    json.dump(metrics_history, f, indent=4)  
-
-                # 早停检查  
-                if early_stopping(val_metrics['mean_iou']):  
-                    logging.info("Early stopping 触发，停止训练")  
-                    break  
+            # 保存训练指标  
+            with open(exp_dir / 'metrics_history.json', 'w') as f:  
+                json.dump(metrics_history, f, indent=4)  
 
             # 学习率检查  
             if current_lr < 1e-7:  

@@ -36,7 +36,7 @@ class EarlyStopping:
             self.counter = 0  
 
 class CombinedLoss(nn.Module):  
-    def __init__(self, weights=[0.5, 0.5], ignore_index=0):  
+    def __init__(self, weights=[0.4, 0.6], ignore_index=0):  
         """  
         组合损失函数：CrossEntropy + Dice Loss  
         

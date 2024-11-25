@@ -4,26 +4,9 @@ from datetime import datetime
 import numpy as np
 import rasterio
 
-from combined_loss import dice_coefficient
 
 # 设置日志
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s'
-)
-logger = logging.getLogger(__name__)
-
-def setup_logging(log_dir: str = None):
-    """设置日志配置"""
-    if log_dir:
-        os.makedirs(log_dir, exist_ok=True)
-        file_handler = logging.FileHandler(
-            os.path.join(log_dir, f"train_{datetime.now():%Y%m%d_%H%M%S}.log")
-        )
-        file_handler.setFormatter(
-            logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
-        )
-        logger.addHandler(file_handler)
+logger = logging.getLogger(__name__)     
 
 def load_and_save_data(image_path, label_path, output_dir, normalize = True):  
     """  
@@ -46,7 +29,7 @@ def load_and_save_data(image_path, label_path, output_dir, normalize = True):
     
     # 加载并处理图像数据  
     try:  
-        logging.info(f"Loading image from {image_path}")  
+        logger.info(f"Loading image from {image_path}")  
         with rasterio.open(image_path) as src:  
             image = src.read()  
             image_nodata = int(src.nodata)  
@@ -94,14 +77,14 @@ def load_and_save_data(image_path, label_path, output_dir, normalize = True):
                     dst.write_mask(image_mask.astype(np.uint8))  
         
     except Exception as e:  
-        logging.error(f"Error processing image: {e}")  
+        logger.error(f"Error processing image: {e}")  
         raise  
         
     # 加载并处理标签数据  
     labels = None  
     if label_path:  
         try:  
-            logging.info(f"Loading labels from {label_path}")  
+            logger.info(f"Loading labels from {label_path}")  
             with rasterio.open(label_path) as src:  
                 labels = src.read(1)  
                 labels_nodata = int(src.nodata)  
@@ -132,51 +115,15 @@ def load_and_save_data(image_path, label_path, output_dir, normalize = True):
                     dst.write_mask(label_mask.astype(np.uint8))  
                 
         except Exception as e:  
-            logging.error(f"Error processing labels: {e}")  
+            logger.error(f"Error processing labels: {e}")  
             raise  
     
     # 记录处理信息  
-    logging.info(f"Image shape: {image.shape}, dtype: {image.dtype}")  
+    logger.info(f"Image shape: {image.shape}, dtype: {image.dtype}")  
     if labels is not None:  
-        logging.info(f"Labels shape: {labels.shape}, dtype: {labels.dtype}")  
+        logger.info(f"Labels shape: {labels.shape}, dtype: {labels.dtype}")  
     
     if output_dir is not None:  
-        logging.info(f"Data processing completed. Results saved to {output_dir}")  
+        logger.info(f"Data processing completed. Results saved to {output_dir}")  
         
     return image, labels, image_meta  
-
-class EarlyStopping:
-    """早停机制
-    
-    Args:
-        patience (int): 容忍多少个epoch指标没有改善
-        mode (str): 'min' 或 'max'，监控指标是要最小化还是最大化
-        min_delta (float): 最小改善阈值
-    """
-    def __init__(self, patience=7, mode='max', min_delta=0):
-        self.patience = patience
-        self.mode = mode
-        self.min_delta = min_delta
-        self.counter = 0
-        self.best_score = None
-        self.early_stop = False
-
-    def __call__(self, score):
-        if self.best_score is None:
-            self.best_score = score
-            return False
-
-        if self.mode == 'max':
-            improvement = score - self.best_score > self.min_delta
-        else:
-            improvement = self.best_score - score > self.min_delta
-
-        if improvement:
-            self.best_score = score
-            self.counter = 0
-        else:
-            self.counter += 1
-            if self.counter >= self.patience:
-                self.early_stop = True
-
-        return self.early_stop

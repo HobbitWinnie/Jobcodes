@@ -2,7 +2,6 @@ import os
 import torch  
 import numpy as np  
 import tifffile  
-import rasterio
 from PIL import Image
 from torch.utils.data import Dataset, DataLoader, random_split  
 from torch.utils.data import Dataset  

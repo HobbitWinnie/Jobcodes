@@ -43,7 +43,7 @@ class Config:
             },  
             'training': {  
                 'epochs': 2000,  
-                'batch_size': 64,  
+                'batch_size': 128,  
                 'learning_rate': 1e-3,
                 'min_lr': 1e-6,  
                 'weight_decay': 0.001,  
@@ -52,9 +52,9 @@ class Config:
                 'ignore_index': 0,
                 'val_frequency': 10,
                 'max_grad_norm': 0.5,  # 梯度裁剪阈值  
-                'scheduler_T0': 50,    # CosineAnnealingWarmRestarts的初始周期  
-                'scheduler_T_mult': 2, # 周期倍增因子 
-                'loss_weights': [0.7, 0.3],  # CE损失和Dice损失的权重  
+                'scheduler_T0': 200,    # CosineAnnealingWarmRestarts的初始周期  
+                'scheduler_T_mult': 1, # 周期倍增因子 
+                'loss_weights': [0.3, 0.7],  # CE损失和Dice损失的权重  
                 'loss_smooth': 1e-5,         # 平滑参数  
             }  
         }  
@@ -95,18 +95,6 @@ def get_config() -> Config:
     if _global_config is None:  
         _global_config = Config()  
     return _global_config  
-
-def setup_logging(filename: str):  
-    """设置日志"""  
-    os.makedirs(os.path.dirname(filename), exist_ok=True)  
-    logging.basicConfig(  
-        level=logging.INFO,  
-        format='%(asctime)s [%(levelname)s] %(message)s',  
-        handlers=[  
-            logging.StreamHandler(),  
-            logging.FileHandler(filename)  
-        ]  
-    )  
 
 def setup_device() -> torch.device:  
     """设置计算设备"""  
