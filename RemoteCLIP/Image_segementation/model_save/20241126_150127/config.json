@@ -32,7 +32,7 @@
         "model_name": "RN50"
     },
     "training": {
-        "epochs": 500,
+        "epochs": 2000,
         "batch_size": 128,
         "learning_rate": 0.001,
         "min_lr": 1e-06,
@@ -42,12 +42,12 @@
         "ignore_index": 0,
         "val_frequency": 10,
         "max_grad_norm": 0.5,
-        "scheduler_T0": 50,
+        "scheduler_T0": 200,
         "scheduler_T_mult": 2,
         "loss_weights": [
-            0.7,
-            0.3
+            0.3,
+            0.7
         ],
-        "loss_smooth": 1e-05
+        "epsilon": 1e-06
     }
 }

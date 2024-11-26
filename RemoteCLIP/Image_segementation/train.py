@@ -90,10 +90,9 @@ def init_training(config):
 
     # 初始化损失函数  
     criterion = CombinedLoss(  
-        num_classes=num_classes,  
-        weights=config['training']['loss_weights'],
-        ignore_index = config['training']['ignore_index'],
-        epsilon = config['training']['loss_smooth']
+        gamma=config['training'].get('gamma', 2.0),  
+        alpha=config['training'].get('alpha', 0.5),  
+        ignore_index=config['training']['ignore_index']  
     ).to(device)  
 
     return device, exp_dir, model, optimizer, scheduler, criterion  
@@ -109,22 +108,21 @@ def validate_model(model, val_loader, criterion, device, num_classes):
     with torch.no_grad():  
         for batch in val_loader:  
             images, masks = batch[0].to(device), batch[1].to(device)  
-            
+
             with autocast():  
                 outputs = model(images)  
                 loss, loss_info = criterion(outputs, masks)  
-            
+
             val_loss += loss.item()  
             loss_components['focal_loss'] += loss_info['focal_loss']  
             loss_components['dice_loss'] += loss_info['dice_loss']  
-            
+
             preds = outputs['main'].argmax(1) if isinstance(outputs, dict) else outputs.argmax(1)  
-            
+
             # 更新混淆矩阵  
-            for true, pred in zip(masks.cpu().numpy().flatten(),   
-                                preds.cpu().numpy().flatten()):  
+            for true, pred in zip(masks.cpu().numpy().flatten(), preds.cpu().numpy().flatten()):  
                 confusion_matrix[true][pred] += 1  
-            
+
             # 更新类别指标  
             for cls in range(num_classes):  
                 mask = masks == cls  
@@ -150,12 +148,12 @@ def validate_model(model, val_loader, criterion, device, num_classes):
             true_positive = confusion_matrix[cls][cls]  
             false_positive = confusion_matrix[:, cls].sum() - true_positive  
             false_negative = confusion_matrix[cls, :].sum() - true_positive  
-            
+
             iou = true_positive / (true_positive + false_positive + false_negative + 1e-10)  
             precision = true_positive / (true_positive + false_positive + 1e-10)  
             recall = true_positive / (true_positive + false_negative + 1e-10)  
             f1 = 2 * precision * recall / (precision + recall + 1e-10)  
-            
+
             class_performance[cls] = {  
                 'accuracy': float(accuracy),  
                 'iou': float(iou),  
@@ -170,7 +168,7 @@ def validate_model(model, val_loader, criterion, device, num_classes):
     total_samples = sum(m['total'] for m in class_metrics.values())  
     accuracy = total_correct / total_samples if total_samples > 0 else 0  
     mean_iou = np.mean([p['iou'] for p in class_performance.values()])  
-    
+
     validation_results = {  
         'loss': avg_loss,  
         'focal_loss': avg_focal_loss,  
@@ -181,15 +179,15 @@ def validate_model(model, val_loader, criterion, device, num_classes):
         'confusion_matrix': confusion_matrix.tolist()  
     }  
 
-    return validation_results 
+    return validation_results  
 
 def train_loop(model, train_loader, val_loader, criterion, optimizer, scheduler, device, config, exp_dir):  
     """训练循环"""  
     scaler = GradScaler()  
     best_miou = float('-inf')  
     total_epochs = config['training']['epochs']  
-    max_grad_norm = config['training'].get('max_grad_norm', 1.0)  
-    
+    max_grad_norm = config['training'].get('max_grad_norm', 5.0)  
+
     # 记录训练历史  
     metrics_history = {  
         'train_loss': [],  
@@ -204,7 +202,7 @@ def train_loop(model, train_loader, val_loader, criterion, optimizer, scheduler,
     }  
 
     logging.info(f"开始训练 - 总轮次: {total_epochs}")  
-    
+
     try:  
         for epoch in range(total_epochs):  
             model.train()  
@@ -214,30 +212,30 @@ def train_loop(model, train_loader, val_loader, criterion, optimizer, scheduler,
             batch_count = 0  
             epoch_start = time.time()  
             current_lr = optimizer.param_groups[0]['lr']  
-            
+
             for batch in train_loader:  
                 images, masks = batch[0].to(device), batch[1].to(device)  
-                
+
                 optimizer.zero_grad(set_to_none=True)  
-                
+
                 with autocast():  
                     outputs = model(images)  
                     loss, loss_info = criterion(outputs, masks)  
-
 
                 if not torch.isfinite(loss):  
                     logging.warning(f"检测到非有限损失值: {loss.item()}")  
                     continue  
 
                 scaler.scale(loss).backward()  
-                
+
+                # 添加梯度剪切  
                 if max_grad_norm > 0:  
                     scaler.unscale_(optimizer)  
                     torch.nn.utils.clip_grad_norm_(model.parameters(), max_grad_norm)  
-                
+
                 scaler.step(optimizer)  
                 scaler.update()  
-                
+
                 # 更新损失统计  
                 epoch_loss += loss.item()  
                 epoch_focal_loss += loss_info['focal_loss']  
@@ -253,10 +251,10 @@ def train_loop(model, train_loader, val_loader, criterion, optimizer, scheduler,
             avg_focal_loss = epoch_focal_loss / batch_count  
             avg_dice_loss = epoch_dice_loss / batch_count  
             epoch_time = time.time() - epoch_start  
-            
+
             # 更新学习率  
             scheduler.step()  
-            
+
             # 记录训练指标  
             metrics_history['train_loss'].append(avg_loss)  
             metrics_history['train_focal_loss'].append(avg_focal_loss)  
@@ -282,7 +280,7 @@ def train_loop(model, train_loader, val_loader, criterion, optimizer, scheduler,
                 f"Training: [{avg_loss:.4f} (Focal: {avg_focal_loss:.4f}, Dice: {avg_dice_loss:.4f})], "  
                 f"Validation: [{val_metrics['loss']:.4f} (Focal: {val_metrics['focal_loss']:.4f}, Dice: {val_metrics['dice_loss']:.4f}), "  
                 f"Acc = {val_metrics['accuracy']:.4f}, mIoU = {val_metrics['mean_iou']:.4f}], LR: {current_lr:.6f}"  
-            )
+            )  
 
             # 保存检查点  
             checkpoint = {  
@@ -295,7 +293,7 @@ def train_loop(model, train_loader, val_loader, criterion, optimizer, scheduler,
                 'metrics_history': metrics_history,  
                 'config': config.config  
             }  
-            
+
             # 保存最佳模型  
             if val_metrics['mean_iou'] > best_miou:  
                 best_miou = val_metrics['mean_iou']  
@@ -312,16 +310,16 @@ def train_loop(model, train_loader, val_loader, criterion, optimizer, scheduler,
                 break  
 
             # 垃圾回收  
-            gc.collect()
+            gc.collect()  
 
-    except KeyboardInterrupt:
-        logging.info("训练被手动中断，保存当前模型...")
-        torch.save(model.state_dict(), exp_dir / 'interrupted_model.pth')
-    except Exception as e:
-        logging.error(f"训练出错: {str(e)}")
-        raise
+    except KeyboardInterrupt:  
+        logging.info("训练被手动中断，保存当前模型...")  
+        torch.save(model.state_dict(), exp_dir / 'interrupted_model.pth')  
+    except Exception as e:  
+        logging.error(f"训练出错: {str(e)}")  
+        raise  
 
-    return best_miou, metrics_history
+    return best_miou, metrics_history  
 
 def main():
     """主程序入口"""

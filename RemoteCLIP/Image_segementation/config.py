@@ -53,9 +53,9 @@ class Config:
                 'val_frequency': 10,
                 'max_grad_norm': 0.5,  # 梯度裁剪阈值  
                 'scheduler_T0': 200,    # CosineAnnealingWarmRestarts的初始周期  
-                'scheduler_T_mult': 1, # 周期倍增因子 
+                'scheduler_T_mult': 2, # 周期倍增因子 
                 'loss_weights': [0.3, 0.7],  # CE损失和Dice损失的权重  
-                'loss_smooth': 1e-5,         # 平滑参数  
+                'epsilon': 1e-6,         # 平滑参数  
             }  
         }  
         
