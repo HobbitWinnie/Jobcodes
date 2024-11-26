@@ -60,3 +60,61 @@
 2024-11-26 16:16:29,630 - INFO - Epoch 40/2000 [110.64s], Training: [0.6228 (Focal: 0.0415, Dice: 0.5813)], Validation: [0.7210 (Focal: 0.0342, Dice: 0.6867), Acc = 0.8425, mIoU = 0.3977], LR: 0.000909
 2024-11-26 16:16:41,831 - INFO - 保存最佳模型 (mIoU: 0.3977)
 2024-11-26 16:19:10,971 - INFO - Epoch 41/2000 [109.88s], Training: [0.6462 (Focal: 0.0437, Dice: 0.6025)], Validation: [0.8604 (Focal: 0.1254, Dice: 0.7350), Acc = 0.7607, mIoU = 0.2960], LR: 0.000905
+2024-11-26 16:21:40,361 - INFO - Epoch 42/2000 [110.36s], Training: [0.6474 (Focal: 0.0474, Dice: 0.6000)], Validation: [0.7470 (Focal: 0.0352, Dice: 0.7119), Acc = 0.8376, mIoU = 0.3739], LR: 0.000900
+2024-11-26 16:24:08,798 - INFO - Epoch 43/2000 [109.73s], Training: [0.6365 (Focal: 0.0463, Dice: 0.5902)], Validation: [0.7226 (Focal: 0.0373, Dice: 0.6853), Acc = 0.8268, mIoU = 0.3979], LR: 0.000895
+2024-11-26 16:24:20,296 - INFO - 保存最佳模型 (mIoU: 0.3979)
+2024-11-26 16:26:49,292 - INFO - Epoch 44/2000 [110.31s], Training: [0.6553 (Focal: 0.0475, Dice: 0.6078)], Validation: [0.7295 (Focal: 0.0429, Dice: 0.6866), Acc = 0.8398, mIoU = 0.3886], LR: 0.000890
+2024-11-26 16:28:24,662 - INFO - Epoch 45/2000 [71.25s], Training: [0.6380 (Focal: 0.0472, Dice: 0.5908)], Validation: [0.7245 (Focal: 0.0458, Dice: 0.6787), Acc = 0.8473, mIoU = 0.3820], LR: 0.000885
+2024-11-26 16:29:42,281 - INFO - Epoch 46/2000 [53.83s], Training: [0.6312 (Focal: 0.0495, Dice: 0.5817)], Validation: [0.9585 (Focal: 0.1739, Dice: 0.7846), Acc = 0.6659, mIoU = 0.2509], LR: 0.000880
+2024-11-26 16:30:59,982 - INFO - Epoch 47/2000 [53.71s], Training: [0.6375 (Focal: 0.0505, Dice: 0.5870)], Validation: [0.7210 (Focal: 0.0357, Dice: 0.6853), Acc = 0.8353, mIoU = 0.4011], LR: 0.000875
+2024-11-26 16:31:24,548 - INFO - 保存最佳模型 (mIoU: 0.4011)
+2024-11-26 16:32:42,308 - INFO - Epoch 48/2000 [53.53s], Training: [0.6361 (Focal: 0.0445, Dice: 0.5916)], Validation: [0.8188 (Focal: 0.0878, Dice: 0.7310), Acc = 0.7972, mIoU = 0.2931], LR: 0.000870
+2024-11-26 16:33:59,706 - INFO - Epoch 49/2000 [53.51s], Training: [0.5920 (Focal: 0.0414, Dice: 0.5506)], Validation: [0.7388 (Focal: 0.0354, Dice: 0.7034), Acc = 0.8464, mIoU = 0.3880], LR: 0.000865
+2024-11-26 16:35:17,453 - INFO - Epoch 50/2000 [53.73s], Training: [0.6270 (Focal: 0.0491, Dice: 0.5779)], Validation: [0.7389 (Focal: 0.0456, Dice: 0.6933), Acc = 0.8124, mIoU = 0.3689], LR: 0.000859
+2024-11-26 16:36:35,279 - INFO - Epoch 51/2000 [53.83s], Training: [0.6106 (Focal: 0.0449, Dice: 0.5657)], Validation: [0.7271 (Focal: 0.0422, Dice: 0.6848), Acc = 0.8433, mIoU = 0.3935], LR: 0.000854
+2024-11-26 16:37:52,779 - INFO - Epoch 52/2000 [53.66s], Training: [0.6159 (Focal: 0.0448, Dice: 0.5711)], Validation: [0.7411 (Focal: 0.0485, Dice: 0.6926), Acc = 0.8221, mIoU = 0.3843], LR: 0.000848
+2024-11-26 16:39:10,452 - INFO - Epoch 53/2000 [53.62s], Training: [0.6078 (Focal: 0.0453, Dice: 0.5625)], Validation: [0.7415 (Focal: 0.0525, Dice: 0.6891), Acc = 0.8458, mIoU = 0.3622], LR: 0.000842
+2024-11-26 16:40:27,926 - INFO - Epoch 54/2000 [53.60s], Training: [0.6078 (Focal: 0.0501, Dice: 0.5577)], Validation: [0.7134 (Focal: 0.0437, Dice: 0.6698), Acc = 0.8433, mIoU = 0.3971], LR: 0.000837
+2024-11-26 16:41:45,545 - INFO - Epoch 55/2000 [53.50s], Training: [0.6002 (Focal: 0.0427, Dice: 0.5575)], Validation: [0.7616 (Focal: 0.0618, Dice: 0.6998), Acc = 0.8430, mIoU = 0.3771], LR: 0.000831
+2024-11-26 16:43:03,448 - INFO - Epoch 56/2000 [53.91s], Training: [0.6027 (Focal: 0.0413, Dice: 0.5614)], Validation: [0.7831 (Focal: 0.0663, Dice: 0.7169), Acc = 0.8222, mIoU = 0.3032], LR: 0.000825
+2024-11-26 16:44:55,585 - INFO - Epoch 57/2000 [72.64s], Training: [0.5823 (Focal: 0.0412, Dice: 0.5411)], Validation: [0.7172 (Focal: 0.0340, Dice: 0.6831), Acc = 0.8408, mIoU = 0.4183], LR: 0.000819
+2024-11-26 16:45:03,415 - INFO - 保存最佳模型 (mIoU: 0.4183)
+2024-11-26 16:47:32,184 - INFO - Epoch 58/2000 [109.52s], Training: [0.5859 (Focal: 0.0443, Dice: 0.5416)], Validation: [0.7280 (Focal: 0.0444, Dice: 0.6836), Acc = 0.8440, mIoU = 0.3722], LR: 0.000813
+2024-11-26 16:50:02,589 - INFO - Epoch 59/2000 [111.16s], Training: [0.5759 (Focal: 0.0448, Dice: 0.5310)], Validation: [0.8214 (Focal: 0.0938, Dice: 0.7275), Acc = 0.7686, mIoU = 0.3195], LR: 0.000807
+2024-11-26 16:52:32,057 - INFO - Epoch 60/2000 [109.92s], Training: [0.5842 (Focal: 0.0457, Dice: 0.5385)], Validation: [0.8052 (Focal: 0.0869, Dice: 0.7183), Acc = 0.7958, mIoU = 0.3361], LR: 0.000800
+2024-11-26 16:55:00,427 - INFO - Epoch 61/2000 [109.96s], Training: [0.5824 (Focal: 0.0417, Dice: 0.5407)], Validation: [0.7282 (Focal: 0.0438, Dice: 0.6844), Acc = 0.8440, mIoU = 0.3942], LR: 0.000794
+2024-11-26 16:57:29,843 - INFO - Epoch 62/2000 [110.44s], Training: [0.5841 (Focal: 0.0434, Dice: 0.5407)], Validation: [0.7272 (Focal: 0.0505, Dice: 0.6767), Acc = 0.8458, mIoU = 0.4092], LR: 0.000788
+2024-11-26 16:59:59,112 - INFO - Epoch 63/2000 [110.19s], Training: [0.5696 (Focal: 0.0443, Dice: 0.5253)], Validation: [0.7766 (Focal: 0.0845, Dice: 0.6920), Acc = 0.8061, mIoU = 0.3414], LR: 0.000781
+2024-11-26 17:02:28,679 - INFO - Epoch 64/2000 [110.22s], Training: [0.5943 (Focal: 0.0452, Dice: 0.5491)], Validation: [0.7013 (Focal: 0.0378, Dice: 0.6635), Acc = 0.8447, mIoU = 0.4187], LR: 0.000775
+2024-11-26 17:02:41,211 - INFO - 保存最佳模型 (mIoU: 0.4187)
+2024-11-26 17:05:10,955 - INFO - Epoch 65/2000 [110.71s], Training: [0.5817 (Focal: 0.0379, Dice: 0.5439)], Validation: [0.7203 (Focal: 0.0472, Dice: 0.6731), Acc = 0.8408, mIoU = 0.3995], LR: 0.000768
+2024-11-26 17:07:39,326 - INFO - Epoch 66/2000 [109.41s], Training: [0.5772 (Focal: 0.0377, Dice: 0.5395)], Validation: [0.6991 (Focal: 0.0380, Dice: 0.6611), Acc = 0.8479, mIoU = 0.4143], LR: 0.000761
+2024-11-26 17:09:48,183 - INFO - Epoch 67/2000 [104.87s], Training: [0.5539 (Focal: 0.0364, Dice: 0.5175)], Validation: [0.7009 (Focal: 0.0408, Dice: 0.6601), Acc = 0.8491, mIoU = 0.4141], LR: 0.000755
+2024-11-26 17:11:05,873 - INFO - Epoch 68/2000 [53.41s], Training: [0.5687 (Focal: 0.0415, Dice: 0.5272)], Validation: [0.7071 (Focal: 0.0406, Dice: 0.6665), Acc = 0.8474, mIoU = 0.4155], LR: 0.000748
+2024-11-26 17:12:23,491 - INFO - Epoch 69/2000 [53.71s], Training: [0.5785 (Focal: 0.0390, Dice: 0.5395)], Validation: [0.6827 (Focal: 0.0377, Dice: 0.6450), Acc = 0.8464, mIoU = 0.4238], LR: 0.000741
+2024-11-26 17:12:34,021 - INFO - 保存最佳模型 (mIoU: 0.4238)
+2024-11-26 17:13:51,643 - INFO - Epoch 70/2000 [53.54s], Training: [0.5647 (Focal: 0.0383, Dice: 0.5264)], Validation: [0.7254 (Focal: 0.0485, Dice: 0.6769), Acc = 0.8453, mIoU = 0.4080], LR: 0.000734
+2024-11-26 17:15:09,406 - INFO - Epoch 71/2000 [53.55s], Training: [0.5591 (Focal: 0.0421, Dice: 0.5170)], Validation: [0.6994 (Focal: 0.0449, Dice: 0.6545), Acc = 0.8496, mIoU = 0.4134], LR: 0.000727
+2024-11-26 17:16:26,995 - INFO - Epoch 72/2000 [53.56s], Training: [0.5501 (Focal: 0.0348, Dice: 0.5153)], Validation: [0.6906 (Focal: 0.0344, Dice: 0.6562), Acc = 0.8411, mIoU = 0.4520], LR: 0.000720
+2024-11-26 17:16:37,540 - INFO - 保存最佳模型 (mIoU: 0.4520)
+2024-11-26 17:17:54,869 - INFO - Epoch 73/2000 [53.53s], Training: [0.5327 (Focal: 0.0369, Dice: 0.4958)], Validation: [0.7337 (Focal: 0.0568, Dice: 0.6769), Acc = 0.8284, mIoU = 0.3730], LR: 0.000713
+2024-11-26 17:19:12,085 - INFO - Epoch 74/2000 [53.27s], Training: [0.5311 (Focal: 0.0379, Dice: 0.4933)], Validation: [0.6957 (Focal: 0.0378, Dice: 0.6579), Acc = 0.8456, mIoU = 0.4342], LR: 0.000706
+2024-11-26 17:20:29,724 - INFO - Epoch 75/2000 [53.59s], Training: [0.5364 (Focal: 0.0362, Dice: 0.5002)], Validation: [0.6841 (Focal: 0.0383, Dice: 0.6458), Acc = 0.8487, mIoU = 0.4393], LR: 0.000699
+2024-11-26 17:21:47,394 - INFO - Epoch 76/2000 [53.56s], Training: [0.5382 (Focal: 0.0389, Dice: 0.4994)], Validation: [0.7210 (Focal: 0.0553, Dice: 0.6656), Acc = 0.8275, mIoU = 0.3906], LR: 0.000692
+2024-11-26 17:23:05,584 - INFO - Epoch 77/2000 [53.89s], Training: [0.5517 (Focal: 0.0383, Dice: 0.5134)], Validation: [0.7709 (Focal: 0.0629, Dice: 0.7080), Acc = 0.8144, mIoU = 0.3384], LR: 0.000684
+2024-11-26 17:24:23,842 - INFO - Epoch 78/2000 [54.05s], Training: [0.5485 (Focal: 0.0380, Dice: 0.5105)], Validation: [0.7069 (Focal: 0.0422, Dice: 0.6647), Acc = 0.8434, mIoU = 0.4228], LR: 0.000677
+2024-11-26 17:25:42,075 - INFO - Epoch 79/2000 [53.95s], Training: [0.5152 (Focal: 0.0360, Dice: 0.4792)], Validation: [0.7274 (Focal: 0.0450, Dice: 0.6824), Acc = 0.8428, mIoU = 0.4113], LR: 0.000670
+2024-11-26 17:27:21,760 - INFO - Epoch 80/2000 [62.00s], Training: [0.5201 (Focal: 0.0366, Dice: 0.4835)], Validation: [0.6968 (Focal: 0.0479, Dice: 0.6488), Acc = 0.8433, mIoU = 0.4285], LR: 0.000662
+2024-11-26 17:29:49,905 - INFO - Epoch 81/2000 [109.79s], Training: [0.5363 (Focal: 0.0357, Dice: 0.5006)], Validation: [0.7321 (Focal: 0.0497, Dice: 0.6824), Acc = 0.8490, mIoU = 0.3997], LR: 0.000655
+2024-11-26 17:32:18,019 - INFO - Epoch 82/2000 [109.13s], Training: [0.5423 (Focal: 0.0390, Dice: 0.5033)], Validation: [0.6968 (Focal: 0.0420, Dice: 0.6548), Acc = 0.8430, mIoU = 0.4125], LR: 0.000647
+2024-11-26 17:34:45,867 - INFO - Epoch 83/2000 [109.55s], Training: [0.5514 (Focal: 0.0366, Dice: 0.5149)], Validation: [0.7066 (Focal: 0.0431, Dice: 0.6636), Acc = 0.8353, mIoU = 0.4200], LR: 0.000640
+2024-11-26 17:37:13,439 - INFO - Epoch 84/2000 [109.32s], Training: [0.5505 (Focal: 0.0360, Dice: 0.5145)], Validation: [0.7177 (Focal: 0.0491, Dice: 0.6686), Acc = 0.8419, mIoU = 0.3967], LR: 0.000632
+2024-11-26 17:39:40,818 - INFO - Epoch 85/2000 [108.99s], Training: [0.5446 (Focal: 0.0362, Dice: 0.5084)], Validation: [0.7559 (Focal: 0.0694, Dice: 0.6866), Acc = 0.8204, mIoU = 0.3605], LR: 0.000625
+2024-11-26 17:41:26,374 - INFO - Epoch 86/2000 [81.57s], Training: [0.5086 (Focal: 0.0374, Dice: 0.4712)], Validation: [0.6948 (Focal: 0.0424, Dice: 0.6524), Acc = 0.8441, mIoU = 0.4328], LR: 0.000617
+2024-11-26 17:42:43,655 - INFO - Epoch 87/2000 [53.41s], Training: [0.5264 (Focal: 0.0341, Dice: 0.4923)], Validation: [0.6959 (Focal: 0.0395, Dice: 0.6564), Acc = 0.8456, mIoU = 0.4349], LR: 0.000609
+2024-11-26 17:44:00,861 - INFO - Epoch 88/2000 [53.25s], Training: [0.5030 (Focal: 0.0347, Dice: 0.4683)], Validation: [0.6935 (Focal: 0.0439, Dice: 0.6496), Acc = 0.8508, mIoU = 0.4216], LR: 0.000602
+2024-11-26 17:45:18,816 - INFO - Epoch 89/2000 [53.77s], Training: [0.5336 (Focal: 0.0342, Dice: 0.4994)], Validation: [0.7004 (Focal: 0.0425, Dice: 0.6579), Acc = 0.8514, mIoU = 0.4357], LR: 0.000594
+2024-11-26 17:46:36,365 - INFO - Epoch 90/2000 [53.70s], Training: [0.5117 (Focal: 0.0360, Dice: 0.4757)], Validation: [0.7338 (Focal: 0.0484, Dice: 0.6854), Acc = 0.8328, mIoU = 0.4306], LR: 0.000586
+2024-11-26 17:47:54,107 - INFO - Epoch 91/2000 [53.52s], Training: [0.5181 (Focal: 0.0368, Dice: 0.4813)], Validation: [0.7046 (Focal: 0.0456, Dice: 0.6591), Acc = 0.8464, mIoU = 0.3978], LR: 0.000579
+2024-11-26 17:49:11,789 - INFO - Epoch 92/2000 [53.63s], Training: [0.5284 (Focal: 0.0333, Dice: 0.4950)], Validation: [0.6803 (Focal: 0.0360, Dice: 0.6444), Acc = 0.8465, mIoU = 0.4510], LR: 0.000571
+2024-11-26 17:50:29,461 - INFO - Epoch 93/2000 [53.50s], Training: [0.5265 (Focal: 0.0372, Dice: 0.4893)], Validation: [0.7093 (Focal: 0.0473, Dice: 0.6620), Acc = 0.8466, mIoU = 0.4105], LR: 0.000563
