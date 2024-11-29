@@ -109,9 +109,8 @@ def validate_model(model, val_loader, criterion, device, num_classes):
         for batch in val_loader:  
             images, masks = batch[0].to(device), batch[1].to(device)  
 
-            with autocast():  
-                outputs = model(images)  
-                loss, loss_info = criterion(outputs, masks)  
+            outputs = model(images)  
+            loss, loss_info = criterion(outputs, masks)  
 
             val_loss += loss.item()  
             loss_components['focal_loss'] += loss_info['focal_loss']  
@@ -186,7 +185,7 @@ def train_loop(model, train_loader, val_loader, criterion, optimizer, scheduler,
     scaler = GradScaler()  
     best_miou = float('-inf')  
     total_epochs = config['training']['epochs']  
-    max_grad_norm = config['training'].get('max_grad_norm', 5.0)  
+    max_grad_norm = config['training'].get('max_grad_norm', 1.0)  
 
     # 记录训练历史  
     metrics_history = {  
@@ -218,15 +217,22 @@ def train_loop(model, train_loader, val_loader, criterion, optimizer, scheduler,
 
                 optimizer.zero_grad(set_to_none=True)  
 
-                with autocast():  
-                    outputs = model(images)  
-                    loss, loss_info = criterion(outputs, masks)  
+                outputs = model(images)  
+                loss, loss_info = criterion(outputs, masks)  
 
                 if not torch.isfinite(loss):  
                     logging.warning(f"检测到非有限损失值: {loss.item()}")  
                     continue  
 
                 scaler.scale(loss).backward()  
+
+                # 在 backward() 之后，添加以下代码  
+                for name, param in model.named_parameters():  
+                    if param.grad is not None:  
+                        if torch.isnan(param.grad).any() or torch.isinf(param.grad).any():  
+                            logging.warning(f"梯度中检测到 NaN 或 Inf，参数: {name}")  
+                    if torch.isnan(param).any() or torch.isinf(param).any():  
+                        logging.warning(f"参数中检测到 NaN 或 Inf，参数: {name}")
 
                 # 添加梯度剪切  
                 if max_grad_norm > 0:  

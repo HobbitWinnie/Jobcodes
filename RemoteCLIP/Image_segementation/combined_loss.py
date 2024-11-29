@@ -86,9 +86,9 @@ class CombinedLoss(nn.Module):
     def forward(self, predicts, targets):  
         # 检查 predicts 中的数值，防止 NaN 或 Inf  
         predicts = predicts['main']  # [B, C, H, W]  
-        if torch.isnan(predicts).any() or torch.isinf(predicts).any():  
-            predicts = torch.nan_to_num(predicts, nan=0.0, posinf=1.0, neginf=-1.0)  
-            print("预测值中检测到 NaN 或 Inf，已处理。")  
+        
+        # 在计算损失之前，处理预测值  
+        predicts = torch.nan_to_num(predicts, nan=0.0, posinf=1.0, neginf=-1.0)  
 
         # 计算 Focal Loss  
         focal_loss = self.focal_loss_fn(predicts, targets)  
@@ -96,7 +96,7 @@ class CombinedLoss(nn.Module):
         # 计算 Dice Loss  
         dice_loss = dice_coefficient(predicts, targets, ignore_index=self.ignore_index)  
 
-        # 检查损失是否为 NaN 或 Inf  
+        # 在计算损失之后，检查损失值  
         if torch.isnan(focal_loss) or torch.isinf(focal_loss):  
             print("Focal Loss 出现 NaN 或 Inf，已处理。")  
             focal_loss = torch.nan_to_num(focal_loss, nan=0.0, posinf=1.0, neginf=0.0)  

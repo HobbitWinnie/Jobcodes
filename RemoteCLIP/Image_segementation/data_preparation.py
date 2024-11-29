@@ -12,6 +12,12 @@ import rasterio
 import tifffile  
 
 
+# 设置日志级别和格式  
+logging.basicConfig(  
+    level=logging.INFO,  
+    format='%(asctime)s - %(levelname)s - %(message)s'  
+) 
+
 def load_and_save_data(image_path, label_path, output_dir, normalize = True):  
     # 如果指定了输出目录，则创建相应的目录结构  
     if output_dir is not None:  
@@ -42,8 +48,8 @@ def load_and_save_data(image_path, label_path, output_dir, normalize = True):
         if np.all(~image_mask):  
             raise ValueError("No valid data in image")  
             
-        # 替换无效值为0  
-        image = np.where(np.broadcast_to(image_mask, image.shape), image, 0)  
+        # # 替换无效值为0  
+        # image = np.where(np.broadcast_to(image_mask, image.shape), image, 0)  
                 
         # **像素值缩放到 0-255 范围**  
         image_processed = np.zeros_like(image, dtype=image.dtype)  
@@ -51,20 +57,20 @@ def load_and_save_data(image_path, label_path, output_dir, normalize = True):
             valid_data = image[i][image_mask]  
             if len(valid_data) > 0:  
                 # 计算第 1 和 99 百分位数  
-                min_val = np.percentile(valid_data, 1)  
-                max_val = np.percentile(valid_data, 99)  
+                min_val = np.percentile(valid_data, 0.5)  
+                max_val = np.percentile(valid_data, 99.5)  
                 # 裁剪图像数据到指定范围  
                 image_clipped = np.clip(image[i], min_val, max_val)  
 
-                # 缩放到 0-255  
-                image_scaled = ((image_clipped - min_val) / (max_val - min_val)) * 255.0  
-                image_processed[i] = image_scaled 
+                # 缩放到 0-1  
+                image_scaled = (image_clipped - min_val) / (max_val - min_val)  
+                image_processed[i] = image_scaled  
             else:  
                 # 如果没有有效数据，直接复制原始数据  
                 image_processed[i] = image[i]  
        
-        # 将图像转换为 uint8 类型  
-        image = image_processed.astype(np.uint8)  
+        # 将图像转换为 float32 类型，并确保值在 0-1 范围内  
+        image = image_processed.astype(np.float32)  # 0-255时，数据类型为uint8 
 
         for i in range(image.shape[0]):  
             print(f"波段 {i+1} 的数据范围：{image[i].min()} - {image[i].max()}")
@@ -137,10 +143,10 @@ def load_and_save_data(image_path, label_path, output_dir, normalize = True):
     if output_dir is not None:  
         logging.info(f"Data processing completed. Results saved to {output_dir}")  
         
-    return image, labels, image_meta  
+    return image, labels, image_meta, image_nodata
 
 
-def preprocess_and_save_patches(image, labels, patch_size, num_patches, save_dir):  
+def preprocess_and_save_patches(image, labels, patch_size, num_patches, save_dir, image_nodata_value):  
     """  
     从处理过的图像和标签中随机采样指定数量的图像块，并保存到指定目录。  
 
@@ -161,7 +167,7 @@ def preprocess_and_save_patches(image, labels, patch_size, num_patches, save_dir
     saved_patches = 0  # 已经保存的图像块数量  
     attempts = 0  # 采样尝试次数  
     
-    max_attempts = num_patches * 10  # 最大尝试次数，防止无限循环  
+    max_attempts = num_patches * 30 # 最大尝试次数，防止无限循环  
     
     while saved_patches < num_patches and attempts < max_attempts:  
         attempts += 1  
@@ -178,9 +184,9 @@ def preprocess_and_save_patches(image, labels, patch_size, num_patches, save_dir
         if zero_ratio > 0.2:  
             continue  # 舍弃该图像块，继续下一个采样  
     
-        # 检查图像块是否具有足够的有效数据  
-        if np.all(image_patch == 0):  
-            continue  # 跳过全零的图像块  
+        # 忽略背景值
+        if np.any(image_patch == image_nodata_value):  
+            continue  # 跳过包含无效值的图像块  
     
         # 转换图像格式 (C, H, W) -> (H, W, C)  
         image_patch_transposed = np.transpose(image_patch, (1, 2, 0))  
@@ -210,15 +216,15 @@ if __name__ == '__main__':
     image_path = Path(config['paths']['data']['images']) / config['paths']['input']['train_image']  
     label_path = Path(config['paths']['data']['images']) / config['paths']['input']['train_label']  
 
-    image, labels, _ = load_and_save_data(  
+    image, labels, _, image_nodata_value = load_and_save_data(  
         image_path=image_path,  
         label_path=label_path,  
         output_dir=config['paths']['data']['process']  
     )  
 
     # 设置参数并运行预处理  
-    save_dir = '/home/Dataset/nw/Segmentation/CpeosTest/train'  
+    save_dir = '/home/Dataset/nw/Segmentation/CpeosTest/train_0_1'  
     patch_size=config['dataset']['patch_size']
     num_patches=config['dataset']['patch_number']
 
-    preprocess_and_save_patches(image, labels, patch_size, num_patches, save_dir)
+    preprocess_and_save_patches(image, labels, patch_size, num_patches, save_dir, image_nodata_value)

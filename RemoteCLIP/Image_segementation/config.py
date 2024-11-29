@@ -14,8 +14,8 @@ class Config:
                     'images': '/home/Dataset/nw/Segmentation/CpeosTest/images',  
                     'process': '/home/Dataset/nw/Segmentation/CpeosTest/image_process',  
                     'results': '/home/Dataset/nw/Segmentation/CpeosTest/result',
-                    'image_dir': '/home/Dataset/nw/Segmentation/CpeosTest/train/images',
-                    'label_dir': '/home/Dataset/nw/Segmentation/CpeosTest/train/labels'
+                    'image_dir': '/home/Dataset/nw/Segmentation/CpeosTest/train_0_1/images',
+                    'label_dir': '/home/Dataset/nw/Segmentation/CpeosTest/train_0_1/labels'
                 },  
                 'model': {  
                     'save_dir': '/home/nw/Codes/RemoteCLIP/Image_segementation/model_save',  
@@ -44,7 +44,7 @@ class Config:
             'training': {  
                 'epochs': 2000,  
                 'batch_size': 128,  
-                'learning_rate': 1e-3,
+                'learning_rate': 1e-4,
                 'min_lr': 1e-6,  
                 'weight_decay': 0.001,  
                 'patience': 100,  

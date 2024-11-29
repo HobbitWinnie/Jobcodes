@@ -2,10 +2,54 @@ import os
 import torch  
 import numpy as np  
 import tifffile  
+import torchvision.transforms.functional as F  
+from torchvision import transforms  
 from PIL import Image
 from torch.utils.data import Dataset, DataLoader, random_split  
 from torch.utils.data import Dataset  
 
+class CustomTransform:  
+    def __init__(self):  
+        self.size = 224  
+        self.mean = [0.48145466, 0.4578275, 0.40821073]  
+        self.std = [0.26862954, 0.26130258, 0.27577711]  
+        self.interpolation = transforms.InterpolationMode.BICUBIC  
+
+    def __call__(self, img):  
+        # img 可以是 numpy.ndarray 或 torch.Tensor，值域在 0-1 之间  
+        # 如果输入是 numpy.ndarray，转换为 Tensor 并调整维度  
+        if isinstance(img, np.ndarray):  
+            img = torch.from_numpy(img).float()  
+            # 调整维度顺序，从 (H, W, C) 到 (C, H, W)  
+            img = img.permute(2, 0, 1)  
+        # 如果输入是 PIL.Image，转换为 Tensor  
+        elif isinstance(img, Image.Image):  
+            img = transforms.ToTensor()(img)  
+        else:  
+            raise TypeError(f"不支持的图像类型：{type(img)}")  
+
+        # 确保图像为 float32 类型  
+        img = img.float()  
+
+        # 如果图像是单通道，转换为三通道  
+        if img.dim() == 2:  
+            img = img.unsqueeze(0).repeat(3, 1, 1)  
+        elif img.dim() == 3:  
+            if img.size(0) == 1:  # 形状为 (1, H, W)  
+                img = img.repeat(3, 1, 1)  
+            elif img.size(0) != 3:  
+                raise ValueError(f"图像通道数为 {img.size(0)}，无法处理。")  
+
+        # 调整尺寸  
+        img = F.resize(img, self.size, self.interpolation)  
+
+        # 中心裁剪  
+        img = F.center_crop(img, self.size)  
+
+        # 归一化  
+        img = F.normalize(img, mean=self.mean, std=self.std)  
+
+        return img  
 
 class RemoteSensingDataset(Dataset):  
     """遥感影像数据集"""  
@@ -18,7 +62,7 @@ class RemoteSensingDataset(Dataset):
         """  
         self.images_dir = images_dir  
         self.labels_dir = labels_dir  
-        self.preprocess_func = preprocess_func  
+        self.preprocess_func = CustomTransform()
         
         # 获取所有图像和标签文件名  
         self.image_files = sorted([f for f in os.listdir(images_dir) if f.endswith('.tif')])  
@@ -45,8 +89,7 @@ class RemoteSensingDataset(Dataset):
         image = tifffile.imread(image_path)  # 标签形状： (H, W)  
         label = tifffile.imread(label_path)  # 标签形状： (H, W)  
 
-        # 应用预处理函数（如果提供了）
-        image = Image.fromarray(image)    
+         # 应用预处理函数（如果提供了）
         if self.preprocess_func is not None:  
             image = self.preprocess_func(image)  
         
