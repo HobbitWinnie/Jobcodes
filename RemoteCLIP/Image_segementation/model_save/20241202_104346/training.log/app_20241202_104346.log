@@ -1,0 +1,2 @@
+2024-12-02 10:43:46,878 - INFO - Loaded RN50 model config.
+2024-12-02 10:43:53,576 - ERROR - 程序出错: [Errno 2] No such file or directory: '/home/Dataset/nw/Segmentation/CpeosTest/train_0_1/images'
