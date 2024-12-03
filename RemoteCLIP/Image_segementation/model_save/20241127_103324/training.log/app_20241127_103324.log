@@ -1,6 +1,0 @@
-2024-11-27 10:33:24,892 - INFO - Loaded RN50 model config.
-2024-11-27 10:33:27,685 - INFO - 使用 4 个GPU训练
-2024-11-27 10:33:36,649 - INFO - 开始训练 - 总轮次: 2000
-2024-11-27 10:38:34,173 - INFO - Epoch 1/2000 [237.49s], Training: [3.1307 (Focal: 2.1581, Dice: 0.9727)], Validation: [1.6952 (Focal: 0.7383, Dice: 0.9569), Acc = 0.2272, mIoU = 0.0491], LR: 0.000100
-2024-11-27 10:38:34,179 - ERROR - 训练出错: name 'scaler' is not defined
-2024-11-27 10:38:34,179 - ERROR - 程序出错: name 'scaler' is not defined

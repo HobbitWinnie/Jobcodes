@@ -109,8 +109,9 @@ def validate_model(model, val_loader, criterion, device, num_classes):
         for batch in val_loader:  
             images, masks = batch[0].to(device), batch[1].to(device)  
 
-            outputs = model(images)  
-            loss, loss_info = criterion(outputs, masks)  
+            with autocast():  
+                outputs = model(images)  
+                loss, loss_info = criterion(outputs, masks)  
 
             val_loss += loss.item()  
             loss_components['focal_loss'] += loss_info['focal_loss']  
@@ -217,8 +218,9 @@ def train_loop(model, train_loader, val_loader, criterion, optimizer, scheduler,
 
                 optimizer.zero_grad(set_to_none=True)  
 
-                outputs = model(images)  
-                loss, loss_info = criterion(outputs, masks)  
+                with autocast():  
+                    outputs = model(images)  
+                    loss, loss_info = criterion(outputs, masks)  
 
                 if not torch.isfinite(loss):  
                     logging.warning(f"检测到非有限损失值: {loss.item()}")  

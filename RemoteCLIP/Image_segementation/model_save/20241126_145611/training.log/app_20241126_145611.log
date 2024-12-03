@@ -1,5 +1,0 @@
-2024-11-26 14:56:11,798 - INFO - Loaded RN50 model config.
-2024-11-26 14:56:14,953 - INFO - 使用 4 个GPU训练
-2024-11-26 14:56:14,953 - INFO - 开始训练 - 总轮次: 2000
-2024-11-26 14:56:24,190 - ERROR - 训练出错: isnan(): argument 'input' (position 1) must be Tensor, not dict
-2024-11-26 14:56:24,190 - ERROR - 程序出错: isnan(): argument 'input' (position 1) must be Tensor, not dict
