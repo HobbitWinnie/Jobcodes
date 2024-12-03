@@ -17,21 +17,21 @@ logging.basicConfig(
 )  
   
 def load_and_save_data(image_path, label_path, output_dir, normalize=True):  
-    # 如果指定了输出目录，则创建相应的目录结构  
+    # 创建相应的目录结构  
     if output_dir is not None:  
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")  
         output_dir = os.path.join(output_dir, timestamp)  
         os.makedirs(output_dir, exist_ok=True)  
   
-    # 加载并处理图像数据  
     try:  
-        logging.info(f"Loading image from {image_path}")  
+        # 加载并处理图像数据  
+        logging.info(f"正在加载图像: {image_path}")  
         with rasterio.open(image_path) as src:  
             image = src.read()  # 图像形状为 (bands, height, width)  
-            image_nodata = src.nodata  # 无效值  
-            image_meta = src.meta  
+            image_meta = src.meta.copy()  
+            image_nodata = src.nodata
   
-        # **只保留前三个波段**  
+        # 仅保留前三个波段  
         if image.shape[0] >= 3:  
             image = image[:3, :, :]  
         else:  
@@ -63,6 +63,7 @@ def load_and_save_data(image_path, label_path, output_dir, normalize=True):
   
                 # 拉伸有效数据到 0-1 范围  
                 band_scaled = (band_data - min_val) / (max_val - min_val)  
+                
                 # 将数据裁剪到 0-1 范围内  
                 band_scaled = np.clip(band_scaled, 0.0, 1.0)  
   
@@ -187,11 +188,6 @@ def preprocess_and_save_patches(image, labels, patch_size, num_patches, save_dir
         # 提取图像块和标签块  
         image_patch = image[:, y:y+patch_size, x:x+patch_size]  # (C, H, W)  
         label_patch = labels[y:y+patch_size, x:x+patch_size]  
-  
-        # for i in range(image_patch.shape[0]):  
-        #     valid_data = image_patch[i][~np.isnan(image_patch[i])]  
-        #     if len(valid_data) > 0:  
-        #         print(f"波段 {i+1} 的数据范围：{valid_data.min()} - {valid_data.max()}")  
   
         # 检查图像块中是否存在无效值  
         if np.isnan(image_patch).any():  
