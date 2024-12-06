@@ -7,11 +7,12 @@ import rasterio
 from torch.cuda.amp import autocast  
 from tqdm import tqdm  
 import numpy as np  
-
-from config import get_config, setup_logging, setup_device  
-from model import UNetWithCLIP  # 更改为你的模型类名  
-from utils import load_and_save_data  
+from config import get_config, setup_device  
+from model import UNetWithCLIP
+from data_preparation import load_and_save_data  
 from dataset import split_image_into_patches, reconstruct_image_from_patches  
+from train import setup_logging
+
 
 class Predictor:  
     """预测类"""  
@@ -181,30 +182,7 @@ class Predictor:
         pred = (pred + pred_flip + pred_flip_v) / 3  
         return pred  
     
-    def _apply_post_processing(self, prediction):  
-        """应用后处理"""  
-        from skimage import morphology  
-        
-        # 移除小区域  
-        if self.post_processing.get('min_size', 0) > 0:  
-            for i in range(1, prediction.max() + 1):  
-                mask = prediction == i  
-                processed = morphology.remove_small_objects(  
-                    mask,   
-                    min_size=self.post_processing['min_size']  
-                )  
-                prediction[mask != processed] = 0  
-        
-        # 平滑处理  
-        if self.post_processing.get('smoothing', False):  
-            for i in range(1, prediction.max() + 1):  
-                mask = prediction == i  
-                processed = morphology.binary_closing(mask)  
-                processed = morphology.binary_opening(processed)  
-                prediction[mask != processed] = 0  
-                
-        return prediction  
-
+    
 def load_model(config, device):  
     """  
     加载模型  

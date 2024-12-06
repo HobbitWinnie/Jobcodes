@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn  
 import torch.nn.functional as F  
 import open_clip  
-from collections import OrderedDict  
+
 
 class DoubleConv(nn.Module):  
     """双卷积块"""  
@@ -206,7 +206,6 @@ class UNetWithCLIP(nn.Module):
             x = self.visual_encoder.conv1(x)  # 224 -> 112  
             x = self.visual_encoder.bn1(x)  
             x = self.visual_encoder.act1(x)  
-            # x = self.visual_encoder.maxpool(x)  # 112 -> 56  
             features.append(x)  
             
             # ResNet块  

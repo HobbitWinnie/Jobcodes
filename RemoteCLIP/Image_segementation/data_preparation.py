@@ -1,8 +1,6 @@
 import os  
 import random  
 import numpy as np  
-from tqdm import tqdm  
-from PIL import Image  
 from pathlib import Path  
 from config import get_config  
 import logging  
