@@ -67,7 +67,6 @@ class UNetWithCLIP(nn.Module):
         
         self.input_size = input_size  
         self.use_aux_loss = use_aux_loss  
-        self.preprocess_func = None
         
         # 初始化 CLIP 模型  
         self._init_clip_model(model_name, ckpt_path)  
@@ -118,7 +117,7 @@ class UNetWithCLIP(nn.Module):
         """初始化 CLIP 模型"""  
         try:  
             device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')  
-            model, _, self.preprocess_func = open_clip.create_model_and_transforms(model_name)  
+            model, _, _ = open_clip.create_model_and_transforms(model_name)  
             
             if ckpt_path:  
                 ckpt = torch.load(ckpt_path, map_location=device)  

@@ -11,19 +11,18 @@ from torch.utils.data import Dataset
 class CustomTransform:  
     def __init__(self):  
         self.size = 224  
-        self.mean = [0.48145466, 0.4578275, 0.40821073]  
-        self.std = [0.26862954, 0.26130258, 0.27577711]  
+        self.mean = [0.48145466, 0.4578275, 0.40821073, 0.5]  
+        self.std = [0.26862954, 0.26130258, 0.27577711, 0.25]  
         self.interpolation = transforms.InterpolationMode.BICUBIC  
 
     def __call__(self, img):  
         # img 可以是 numpy.ndarray 或 torch.Tensor，值域在 0-1 之间  
-        # 如果输入是 numpy.ndarray，转换为 Tensor 并调整维度  
         if isinstance(img, np.ndarray):  
+            # 如果输入是 numpy.ndarray，则转换为 Tensor (H, W, C -> C, H, W)  
             img = torch.from_numpy(img).float()  
-            # 调整维度顺序，从 (H, W, C) 到 (C, H, W)  
             img = img.permute(2, 0, 1)  
-        # 如果输入是 PIL.Image，转换为 Tensor  
         elif isinstance(img, Image.Image):  
+            # 如果输入是 PIL.Image，则转换为 Tensor  
             img = transforms.ToTensor()(img)  
         else:  
             raise TypeError(f"不支持的图像类型：{type(img)}")  
@@ -31,13 +30,17 @@ class CustomTransform:
         # 确保图像为 float32 类型  
         img = img.float()  
 
-        # 如果图像是单通道，转换为三通道  
-        if img.dim() == 2:  
-            img = img.unsqueeze(0).repeat(3, 1, 1)  
+        # 如果图像是单通道，扩展为4通道（通常假设任务需求）  
+        if img.dim() == 2:  # (H, W)  
+            img = img.unsqueeze(0).repeat(4, 1, 1)  # 补充4个通道全相同  
         elif img.dim() == 3:  
-            if img.size(0) == 1:  # 形状为 (1, H, W)  
-                img = img.repeat(3, 1, 1)  
-            elif img.size(0) != 3:  
+            if img.size(0) == 1:  # 单通道 (1, H, W)  
+                img = img.repeat(4, 1, 1)  # 重复为4通道  
+            elif img.size(0) == 3:  # RGB (3, H, W)  
+                # 如果输入是3通道，增加一个全零通道，扩展到4通道  
+                extra_channel = torch.zeros((1, img.size(1), img.size(2)))  # (1, H, W)  
+                img = torch.cat((img, extra_channel), dim=0)  
+            elif img.size(0) != 4:  # 不是4通道  
                 raise ValueError(f"图像通道数为 {img.size(0)}，无法处理。")  
 
         # 调整尺寸  
@@ -53,7 +56,7 @@ class CustomTransform:
 
 class RemoteSensingDataset(Dataset):  
     """遥感影像数据集"""  
-    def __init__(self, images_dir, labels_dir, preprocess_func=None):  
+    def __init__(self, images_dir, labels_dir):  
         """  
         Args:  
             images_dir: 图像块的目录路径  
@@ -110,13 +113,12 @@ def validate_labels(labels: torch.Tensor, num_classes: int = 9) -> None:
         raise ValueError(f"标签值应在 [0, {num_classes-1}] 范围内，但得到的范围是 [{min_label}, {max_label}]")  
     
 
-def create_dataloaders(image_dir, labels_dir, batch_size, train_ratio=0.8, num_workers=4, preprocess_func=None):  
+def create_dataloaders(image_dir, labels_dir, batch_size, train_ratio=0.8, num_workers=4):  
     """创建训练和验证数据加载器（单GPU版本）"""  
     # 创建数据集  
     dataset = RemoteSensingDataset(  
         images_dir=image_dir,  
         labels_dir=labels_dir,  
-        preprocess_func=preprocess_func  
     )  
 
     # 划分数据集  
@@ -179,50 +181,88 @@ def split_image_into_patches(image, patch_size=256, overlap=128, preprocess_func
 
     return patches  
 
-def reconstruct_image_from_patches(predictions, image_size, patch_size, overlap):  
-    """重建完整的预测图像"""  
-    h, w = image_size  
-    stride = patch_size - overlap  
-    num_classes = predictions[0].shape[0] if predictions else 1  
+def reconstruct_image_from_patches(predictions, image_size, patch_size, overlap, confidences=None):  
+    """  
+    重建完整的预测图像，采用置信度决定重叠区域保留的值。  
+    
+    Args:  
+        predictions (list): 每个 patch 的预测结果 (Tensor)，形状为 (1, patch_size, patch_size)。  
+        image_size (tuple): 原始图像的大小 (height, width)。  
+        patch_size (int): 每个 patch 的大小。  
+        overlap (int): patch 之间的重叠像素数。  
+        confidences (list, optional): 每个 patch 的置信度矩阵 (Tensor)，形状为 (patch_size, patch_size)。默认为 None。  
+                                      如果为 None，所有 patch 的 confidence 默认值为 1。  
 
-    # 初始化输出  
-    reconstructed = np.zeros((h, w), dtype=np.uint8)  
-    confidence = np.zeros((h, w), dtype=np.float32)  
+    Returns:  
+        np.ndarray: 完整拼接后的预测图像。  
+    """  
+    h, w = image_size  # 原图尺寸  
+    stride = patch_size - overlap  # 滑动窗口步长  
 
-    def update_region(y, x, pred):  
-        """更新指定区域的预测结果"""  
-        if pred.ndim == 1:  
-            pred = pred.reshape(num_classes, patch_size, patch_size)  
+    # 初始化输出图像和置信度图  
+    reconstructed = np.zeros((h, w), dtype=np.float32)  # 用于存储拼接后的图像  
+    confidence_map = np.zeros((h, w), dtype=np.float32)  # 用于存储当前图像每像素的总置信度  
 
-        patch_confidence = np.max(pred, axis=0)  
-        patch_prediction = np.argmax(pred, axis=0)  
+    # 函数用于更新指定区域  
+    def update_region(y, x, pred, patch_confidence):  
+        """  
+        更新图像中一个区域的值，基于置信度。  
+        Args:  
+            y (int): 当前 patch 的 y 起始坐标。  
+            x (int): 当前 patch 的 x 起始坐标。  
+            pred (Tensor): 当前 patch 的预测结果，形状为 (1, patch_size, patch_size)。  
+            patch_confidence (Tensor or None): 当前 patch 的置信度矩阵，形状为 (patch_size, patch_size)。  
+                                                如果 None，置信度值默认为 1。  
+        """  
+        if isinstance(pred, torch.Tensor):  # 如果是 Tensor，则转换成 NumPy  
+            pred = pred.squeeze(0).cpu().numpy()  
 
-        # 计算有效区域  
+        if patch_confidence is not None and isinstance(patch_confidence, torch.Tensor):  
+            patch_confidence = patch_confidence.cpu().numpy()  
+
+        # 如果没有提供置信度，则默认为所有像素的置信度为 1  
+        if patch_confidence is None:  
+            patch_confidence = np.ones(pred.shape, dtype=np.float32)  
+
+        # 计算有效的范围  
         y_end = min(y + patch_size, h)  
         x_end = min(x + patch_size, w)  
         y_range = slice(y, y_end)  
         x_range = slice(x, x_end)  
 
-        # 更新区域  
-        current_confidence = confidence[y_range, x_range]  
-        update_mask = patch_confidence[:y_end-y, :x_end-x] > current_confidence  
-        
-        confidence[y_range, x_range][update_mask] = patch_confidence[:y_end-y, :x_end-x][update_mask]  
-        reconstructed[y_range, x_range][update_mask] = patch_prediction[:y_end-y, :x_end-x][update_mask]  
+        # 处理 patch 内的实际使用区域（边界可能小于 patch_size）  
+        pred_y_end = y_end - y  
+        pred_x_end = x_end - x  
 
+        # 当前 patch 的有效数据  
+        patch_prediction = pred[:pred_y_end, :pred_x_end]  
+        patch_conf = patch_confidence[:pred_y_end, :pred_x_end]  
+
+        # 对图像和置信度图进行更新（基于置信度覆盖）  
+        current_conf = confidence_map[y_range, x_range]  
+        update_mask = patch_conf > current_conf  # 只有置信度更高的像素才会覆盖  
+        
+        # 更新图像和置信度  
+        confidence_map[y_range, x_range][update_mask] = patch_conf[update_mask]  
+        reconstructed[y_range, x_range][update_mask] = patch_prediction[update_mask]  
+
+    # 遍历所有 patches 并更新  
     idx = 0  
     for y in range(0, h, stride):  
-        if y + patch_size > h:  
+        if y + patch_size > h:  # 调整 y 位置  
             y = h - patch_size  
         for x in range(0, w, stride):  
-            if x + patch_size > w:  
+            if x + patch_size > w:  # 调整 x 位置  
                 x = w - patch_size  
-            if idx < len(predictions):  
-                update_region(y, x, predictions[idx])  
+            if idx < len(predictions):  # 确保索引范围有效  
+                pred = predictions[idx]  
+                patch_conf = confidences[idx] if confidences is not None else None  
+                update_region(y, x, pred, patch_conf)  
                 idx += 1  
-            if x + patch_size >= w:  
+            if x + patch_size >= w:  # 到达图像右边缘  
                 break  
-        if y + patch_size >= h:  
+        if y + patch_size >= h:  # 到达图像下边缘  
             break  
 
-    return reconstructed  
+    # 返回最终生成的图像  
+    return reconstructed.astype(np.float32)

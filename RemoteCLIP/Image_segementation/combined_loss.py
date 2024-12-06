@@ -85,7 +85,7 @@ class CombinedLoss(nn.Module):
 
     def forward(self, predicts, targets):  
         # 检查 predicts 中的数值，防止 NaN 或 Inf  
-        predicts = predicts['main']  # [B, C, H, W]  
+        # predicts = predicts['main']  # [B, C, H, W]  s
         
         # 在计算损失之前，处理预测值  
         predicts = torch.nan_to_num(predicts, nan=0.0, posinf=1.0, neginf=-1.0)  

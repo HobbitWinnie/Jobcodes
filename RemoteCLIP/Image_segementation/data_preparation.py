@@ -29,11 +29,11 @@ def load_and_save_data(image_path, label_path, output_dir, normalize=True):
             image_meta = src.meta.copy()  
             image_nodata = src.nodata
   
-        # 仅保留前三个波段  
-        if image.shape[0] >= 3:  
-            image = image[:3, :, :]  
-        else:  
-            raise ValueError("图像的波段数少于 3，无法提取前三个波段")  
+        # # 仅保留前三个波段  
+        # if image.shape[0] >= 3:  
+        #     image = image[:3, :, :]  
+        # else:  
+        #     raise ValueError("图像的波段数少于 3，无法提取前三个波段")  
   
         # 创建无效值掩码  
         if image_nodata is not None:  
@@ -230,7 +230,7 @@ if __name__ == '__main__':
     )  
   
     # 设置参数并运行预处理  
-    save_dir = '/home/Dataset/nw/Segmentation/CpeosTest/train_1'  
+    save_dir = '/home/Dataset/nw/Segmentation/CpeosTest/train_4channel'  
     patch_size = config['dataset']['patch_size']  
     num_patches = config['dataset']['patch_number']  
   

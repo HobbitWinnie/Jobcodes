@@ -5,6 +5,8 @@ import numpy as np
 import logging
 import os
 import rasterio
+from datetime import datetime
+import json
 import torch.nn.functional as F
 from torch.cuda.amp import autocast
 from tqdm import tqdm
@@ -42,6 +44,9 @@ def load_model(config, checkpoint_path, device):
         model_name=config['model']['model_name'],
         ckpt_path=config['paths']['model']['clip_ckpt'],
         num_classes=num_classes,
+        dropout_rate=0.2,  
+        use_aux_loss=True,  
+        initial_features=128  
     ).to(device)
 
     # 检查权重文件是否存在  
@@ -114,11 +119,11 @@ def predict_single_image(model, image_path, patch_size, overlap, device, preproc
 
     with torch.no_grad():
         for patch in tqdm(patches, desc="Processing patches"):
-            patch_tensor = torch.tensor(patch, dtype=torch.float32).unsqueeze(0).to(device)
+            patch_tensor = patch.clone().detach().unsqueeze(0).to(device)  
             try:
                 with autocast():
                     output = model(patch_tensor)
-                    pred = F.softmax(output, dim=1).squeeze(0).cpu().numpy()
+                    pred = output['main'].argmax(1) if isinstance(output, dict) else output.argmax(1)  
                 predictions.append(pred)
             except Exception as e:
                 logging.error(f"Error processing patch: {str(e)}")
@@ -197,7 +202,14 @@ def main():
         ]
 
         # 设置日志
-        setup_logging(Path(config['paths']['logs']) / "predict.log")
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')  
+        exp_dir = Path(config['paths']['model']['save_dir']) / timestamp  
+        exp_dir.mkdir(parents=True, exist_ok=True)  
+
+        # 设置日志  
+        setup_logging(exp_dir / 'predict.log')  
+        with open(exp_dir / 'config.json', 'w') as f:  
+            json.dump(config.config, f, indent=4)  
 
         # 批量预测
         predict_images(
@@ -207,7 +219,7 @@ def main():
             patch_size=config['dataset']['patch_size'],
             overlap=config['predict']['overlap'],
             device=device,
-            preprocess_func=CustomTransform
+            preprocess_func=CustomTransform()
         )
 
         logging.info("预测完成！结果已保存到输出目录。")

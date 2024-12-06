@@ -1,0 +1,9 @@
+2024-12-06 14:35:51,317 - INFO - 加载图像: /home/Dataset/nw/Segmentation/CpeosTest/images/train_mask.tif
+2024-12-06 14:35:51,317 - INFO - 正在加载图像: /home/Dataset/nw/Segmentation/CpeosTest/images/train_mask.tif
+2024-12-06 14:35:51,886 - INFO - Image shape: (3, 2514, 3511), dtype: float32
+2024-12-06 14:36:09,894 - INFO - Prediction saved to /home/Dataset/nw/Segmentation/CpeosTest/result/train_mask_results_UNetWithCLIP.tif
+2024-12-06 14:36:09,896 - INFO - 加载图像: /home/Dataset/nw/Segmentation/CpeosTest/images/GF2_test_image.tif
+2024-12-06 14:36:09,897 - INFO - 正在加载图像: /home/Dataset/nw/Segmentation/CpeosTest/images/GF2_test_image.tif
+2024-12-06 14:36:12,836 - INFO - Image shape: (3, 6704, 3623), dtype: float32
+2024-12-06 14:37:04,064 - INFO - Prediction saved to /home/Dataset/nw/Segmentation/CpeosTest/result/GF2_test_image_results_UNetWithCLIP.tif
+2024-12-06 14:37:04,069 - INFO - 预测完成！结果已保存到输出目录。

@@ -1,0 +1,2 @@
+2024-12-06 15:16:23,229 - INFO - Loaded RN50 model config.
+2024-12-06 15:16:24,841 - ERROR - 程序出错: 'CLIPSegmentation' object has no attribute 'preprocess_func'

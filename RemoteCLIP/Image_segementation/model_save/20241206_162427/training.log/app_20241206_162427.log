@@ -1,0 +1,5 @@
+2024-12-06 16:24:27,276 - INFO - Loaded RN50 model config.
+2024-12-06 16:24:28,923 - INFO - 使用 4 个GPU训练
+2024-12-06 16:24:28,923 - INFO - 开始训练 - 总轮次: 2000
+2024-12-06 16:24:50,440 - ERROR - 训练出错: new(): invalid data type 'str'
+2024-12-06 16:24:50,441 - ERROR - 程序出错: new(): invalid data type 'str'

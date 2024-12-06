@@ -14,8 +14,8 @@ class Config:
                     'images': '/home/Dataset/nw/Segmentation/CpeosTest/images',  
                     'process': '/home/Dataset/nw/Segmentation/CpeosTest/image_process',  
                     'results': '/home/Dataset/nw/Segmentation/CpeosTest/result',
-                    'image_dir': '/home/Dataset/nw/Segmentation/CpeosTest/train_1/images',
-                    'label_dir': '/home/Dataset/nw/Segmentation/CpeosTest/train_1/labels'
+                    'image_dir': '/home/Dataset/nw/Segmentation/CpeosTest/train_4channel/images',
+                    'label_dir': '/home/Dataset/nw/Segmentation/CpeosTest/train_4channel/labels'
                 },  
                 'model': {  
                     'save_dir': '/home/nw/Codes/RemoteCLIP/Image_segementation/model_save',  
