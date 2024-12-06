@@ -151,7 +151,7 @@ def load_and_save_data(image_path, label_path, output_dir, normalize=True):
     if output_dir is not None:  
         logging.info(f"Data processing completed. Results saved to {output_dir}")  
   
-    return image, labels
+    return image, labels, image_meta
   
   
 def preprocess_and_save_patches(image, labels, patch_size, num_patches, save_dir):  
@@ -223,7 +223,7 @@ if __name__ == '__main__':
     image_path = Path(config['paths']['data']['images']) / config['paths']['input']['train_image']  
     label_path = Path(config['paths']['data']['images']) / config['paths']['input']['train_label']  
   
-    image, labels = load_and_save_data(  
+    image, labels, image_meta = load_and_save_data(  
         image_path=image_path,  
         label_path=label_path,  
         output_dir=config['paths']['data']['process']  

@@ -19,14 +19,19 @@ class Config:
                 },  
                 'model': {  
                     'save_dir': '/home/nw/Codes/RemoteCLIP/Image_segementation/model_save',  
-                    'best_model': 'RemoteCLIP_UNet_best_model.pth',  
+                    'best_model': '/home/nw/Codes/RemoteCLIP/Image_segementation/model_save/20241203_101655/best_model.pth',  
                     'clip_ckpt': '/home/nw/Assets/RemoteCLIP/ckpt/RemoteCLIP-RN50.pt',  
                 },  
                 'input': {  
                     'train_image': 'GF2_train_image.tif',  
                     'train_label': 'train_label.tif',  
+                    'train_mask': 'train_mask.tif',
                     'test_image': 'GF2_test_image.tif'  
-                }  
+                } ,
+                'output': {
+                    'train_mask_result': 'train_mask_results_UNetWithCLIP.tif',
+                    'test_image_result': 'GF2_test_image_results_UNetWithCLIP.tif'
+                }
             },  
             'dataset': {  
                 'patch_size': 224,  
@@ -56,7 +61,11 @@ class Config:
                 'scheduler_T_mult': 2, # 周期倍增因子 
                 'loss_weights': [0.3, 0.7],  # CE损失和Dice损失的权重  
                 'epsilon': 1e-6,         # 平滑参数  
-            }  
+            },
+            'predict': {
+                'overlap': 64,
+                'batch_size': 32
+            }
         }  
         
         self._validate_config()  

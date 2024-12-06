@@ -3,7 +3,6 @@ import torch
 import torch.nn as nn  
 import logging  
 from torch.optim.lr_scheduler import CosineAnnealingWarmRestarts  
-from torch.utils.data import DataLoader  
 from torch.cuda.amp import GradScaler, autocast  
 from torch.nn import functional as F  
 
