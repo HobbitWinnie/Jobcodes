@@ -1,7 +1,7 @@
 import os  
 import logging  
 import torch  
-from typing import Dict, Any  
+
 
 class Config:  
     """配置管理类"""  
@@ -81,7 +81,7 @@ class Config:
             if not os.path.exists(path):  
                 logging.warning(f"Required path does not exist: {path}")  
     
-    def create_directories(self) -> None:  
+    def create_directories(self):  
         """创建必要的目录"""  
         directories = [  
             self.config['paths']['data']['process'],  
@@ -91,21 +91,21 @@ class Config:
         for directory in directories:  
             os.makedirs(directory, exist_ok=True)  
     
-    def __getitem__(self, key: str) -> Any:  
+    def __getitem__(self, key: str):  
         """允许像字典一样访问配置"""  
         return self.config[key]  
 
 # 全局配置实例  
 _global_config = None  
 
-def get_config() -> Config:  
+def get_config():  
     """获取全局配置实例"""  
     global _global_config  
     if _global_config is None:  
         _global_config = Config()  
     return _global_config  
 
-def setup_device() -> torch.device:  
+def setup_device():  
     """设置计算设备"""  
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")  
     logging.info(f"Using device: {device}")  

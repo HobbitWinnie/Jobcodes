@@ -57,7 +57,8 @@ def init_training(config):
     num_classes = config['dataset']['num_classes']  
     model = CLIPSegmentation(  
         model_name=config['model']['model_name'],  # CLIP 模型名称  
-        ckpt_path=config['paths']['model']['clip_ckpt'],  # CLIP 检查点路径  
+        # ckpt_path=config['paths']['model']['clip_ckpt'],  # CLIP 检查点路径  
+        ckpt_path=None,
         num_classes=num_classes,  # 分割任务类别数  
         input_size=config['dataset']['patch_size']  # 输入图像大小  
     ).to(device)  
