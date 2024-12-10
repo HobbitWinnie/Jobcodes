@@ -11,33 +11,11 @@ from pathlib import Path
 from datetime import datetime
 from torch.cuda.amp import GradScaler, autocast
 from dataset import create_dataloaders
-from model import UNetWithCLIP
+from clip_rn50_unet_model import UNetWithCLIP
 from config import get_config
 from combined_loss import CombinedLoss
+from utils import setup_logging
 
-def setup_logging(log_dir: str = None):  
-    """设置日志配置"""  
-    # 清除根记录器的处理器，防止重复添加  
-    logging.getLogger().handlers.clear()  
-    
-    # 设置日志级别和格式  
-    logging.basicConfig(  
-        level=logging.INFO,  
-        format='%(asctime)s - %(levelname)s - %(message)s'  
-    )  
-    
-    # 如果指定了日志目录，添加文件处理器  
-    if log_dir:  
-        import os  
-        from datetime import datetime  
-        os.makedirs(log_dir, exist_ok=True)  
-        file_handler = logging.FileHandler(  
-            os.path.join(log_dir, f"app_{datetime.now():%Y%m%d_%H%M%S}.log")  
-        )  
-        file_handler.setFormatter(  
-            logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')  
-        )  
-        logging.getLogger().addHandler(file_handler)  
 
 def init_training(config):  
     """初始化训练组件"""  

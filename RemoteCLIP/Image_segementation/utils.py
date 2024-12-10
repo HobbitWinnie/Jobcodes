@@ -6,7 +6,23 @@ import rasterio
 
 
 # 设置日志
-logger = logging.getLogger(__name__)     
+def setup_logging(log_dir: str = None):
+    """设置日志配置"""
+    logging.getLogger().handlers.clear()
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s - %(levelname)s - %(message)s'
+    )
+    if log_dir:
+        import os
+        os.makedirs(log_dir, exist_ok=True)
+        file_handler = logging.FileHandler(
+            os.path.join(log_dir, f"app_{datetime.now():%Y%m%d_%H%M%S}.log")
+        )
+        file_handler.setFormatter(
+            logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+        )
+        logging.getLogger().addHandler(file_handler)
 
 def load_and_save_data(image_path, label_path, output_dir, normalize = True):  
     """  

@@ -11,30 +11,11 @@ import torch.nn.functional as F
 from torch.cuda.amp import autocast
 from tqdm import tqdm
 from pathlib import Path
-from model import UNetWithCLIP
+from nw.Codes.RemoteCLIP.Image_segementation.clip_rn50_unet_model import UNetWithCLIP
 from config import get_config
 from data_preparation import load_and_save_data
 from dataset import split_image_into_patches, reconstruct_image_from_patches, CustomTransform
-
-
-def setup_logging(log_file: Path = None):
-    """设置日志配置"""
-    logger = logging.getLogger()
-    logger.handlers.clear()
-    logger.setLevel(logging.INFO)
-    formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
-
-    # 控制台日志
-    console_handler = logging.StreamHandler()
-    console_handler.setFormatter(formatter)
-    logger.addHandler(console_handler)
-
-    # 文件日志（如果提供路径）
-    if log_file:
-        log_file.parent.mkdir(parents=True, exist_ok=True)
-        file_handler = logging.FileHandler(log_file)
-        file_handler.setFormatter(formatter)
-        logger.addHandler(file_handler)
+from utils import setup_logging
 
 
 def load_model(config, checkpoint_path, device):

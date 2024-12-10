@@ -11,28 +11,10 @@ from pathlib import Path
 from datetime import datetime  
 from torch.cuda.amp import GradScaler, autocast  
 from dataset import create_dataloaders  
-from clip_segmentation import CLIPSegmentation  # 从新模型文件导入 CLIPSegmentation  
+from clip_seg_model import CLIPSegmentation  
 from config import get_config  
 from combined_loss import CombinedLoss  
-
-
-def setup_logging(log_dir: str = None):  
-    """设置日志配置"""  
-    logging.getLogger().handlers.clear()  
-    logging.basicConfig(  
-        level=logging.INFO,  
-        format='%(asctime)s - %(levelname)s - %(message)s'  
-    )  
-    if log_dir:  
-        import os  
-        os.makedirs(log_dir, exist_ok=True)  
-        file_handler = logging.FileHandler(  
-            os.path.join(log_dir, f"app_{datetime.now():%Y%m%d_%H%M%S}.log")  
-        )  
-        file_handler.setFormatter(  
-            logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')  
-        )  
-        logging.getLogger().addHandler(file_handler)  
+from utils import setup_logging
 
 
 def init_training(config):  
