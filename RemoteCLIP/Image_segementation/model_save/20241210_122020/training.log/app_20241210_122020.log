@@ -1,0 +1,43 @@
+2024-12-10 12:20:20,717 - INFO - Loading pretrained ViT-L-14 from OpenAI.
+2024-12-10 12:20:26,865 - INFO - 使用 4 个GPU训练
+2024-12-10 12:20:26,865 - INFO - 开始训练 - 总轮次: 20000
+2024-12-10 12:20:31,693 - ERROR - 训练出错: Caught RuntimeError in replica 0 on device 0.
+Original Traceback (most recent call last):
+  File "/home/nw/.conda/envs/pytorch/lib/python3.9/site-packages/torch/nn/parallel/parallel_apply.py", line 83, in _worker
+    output = module(*input, **kwargs)
+  File "/home/nw/.conda/envs/pytorch/lib/python3.9/site-packages/torch/nn/modules/module.py", line 1511, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+  File "/home/nw/.conda/envs/pytorch/lib/python3.9/site-packages/torch/nn/modules/module.py", line 1520, in _call_impl
+    return forward_call(*args, **kwargs)
+  File "/home/nw/Codes/RemoteCLIP/Image_segementation/clip_vit_seg_model.py", line 87, in forward
+    x = self.final_conv(x)
+  File "/home/nw/.conda/envs/pytorch/lib/python3.9/site-packages/torch/nn/modules/module.py", line 1511, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+  File "/home/nw/.conda/envs/pytorch/lib/python3.9/site-packages/torch/nn/modules/module.py", line 1520, in _call_impl
+    return forward_call(*args, **kwargs)
+  File "/home/nw/.conda/envs/pytorch/lib/python3.9/site-packages/torch/nn/modules/conv.py", line 460, in forward
+    return self._conv_forward(input, self.weight, self.bias)
+  File "/home/nw/.conda/envs/pytorch/lib/python3.9/site-packages/torch/nn/modules/conv.py", line 456, in _conv_forward
+    return F.conv2d(input, weight, bias, self.stride,
+RuntimeError: Expected 3D (unbatched) or 4D (batched) input to conv2d, but got input of size: [32, 768]
+
+2024-12-10 12:20:31,693 - ERROR - 程序出错: Caught RuntimeError in replica 0 on device 0.
+Original Traceback (most recent call last):
+  File "/home/nw/.conda/envs/pytorch/lib/python3.9/site-packages/torch/nn/parallel/parallel_apply.py", line 83, in _worker
+    output = module(*input, **kwargs)
+  File "/home/nw/.conda/envs/pytorch/lib/python3.9/site-packages/torch/nn/modules/module.py", line 1511, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+  File "/home/nw/.conda/envs/pytorch/lib/python3.9/site-packages/torch/nn/modules/module.py", line 1520, in _call_impl
+    return forward_call(*args, **kwargs)
+  File "/home/nw/Codes/RemoteCLIP/Image_segementation/clip_vit_seg_model.py", line 87, in forward
+    x = self.final_conv(x)
+  File "/home/nw/.conda/envs/pytorch/lib/python3.9/site-packages/torch/nn/modules/module.py", line 1511, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+  File "/home/nw/.conda/envs/pytorch/lib/python3.9/site-packages/torch/nn/modules/module.py", line 1520, in _call_impl
+    return forward_call(*args, **kwargs)
+  File "/home/nw/.conda/envs/pytorch/lib/python3.9/site-packages/torch/nn/modules/conv.py", line 460, in forward
+    return self._conv_forward(input, self.weight, self.bias)
+  File "/home/nw/.conda/envs/pytorch/lib/python3.9/site-packages/torch/nn/modules/conv.py", line 456, in _conv_forward
+    return F.conv2d(input, weight, bias, self.stride,
+RuntimeError: Expected 3D (unbatched) or 4D (batched) input to conv2d, but got input of size: [32, 768]
+

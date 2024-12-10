@@ -272,9 +272,7 @@ def main():
             batch_size=config['training']['batch_size'],
             train_ratio=config['dataset']['train_val_split'],
             num_workers=config['dataset']['num_workers'],
-            input_size=config['dataset']['patch_size'],  # 确保数据加载器接受正确的图像尺寸
-            num_channels=4  # 设置输入通道数为4
-        )
+       )
 
         if torch.cuda.device_count() > 1:
             model = nn.DataParallel(model)

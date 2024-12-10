@@ -21,9 +21,14 @@ class CLIPSegmentation(nn.Module):
         # 初始化 CLIP 模型  
         self._init_clip_model(model_name, ckpt_path, freeze_clip)  
 
+        # print(dir(self.visual_encoder.transformer))
+        # print("conv1.out_channels:", self.visual_encoder.conv1.out_channels)  
+        # print("transformer.width:", getattr(self.visual_encoder.transformer, 'width', 'Not Available'))  
+        # print("output_dim:", getattr(self.visual_encoder, 'output_dim', 'Not Available'))
+
         # 添加最终的卷积层，用于将 CLIP 特征映射到分割类别数  
         self.final_conv = nn.Conv2d(  
-            in_channels=self.visual_encoder.conv1.out_channels,  # ViT 模型的输出通道数  
+            in_channels=self.visual_encoder.transformer.width,  # ViT 模型的嵌入维度  
             out_channels=num_classes,  
             kernel_size=1  
         )  
@@ -74,19 +79,21 @@ class CLIPSegmentation(nn.Module):
 
     def forward(self, x):  
         self._validate_input(x)  
+        
+        # 获取中间特征  
+        x = self._forward_features(x)  # [batch_size, num_patches+1, embed_dim]  
+        x = x[:, 1:, :]  # 移除 [CLS] 标记  
 
-        # 提取 CLIP 特征  
-        if self.training and not any(param.requires_grad for param in self.visual_encoder.parameters()):  
-            # 如果在训练模式且 visual_encoder 被冻结，使用 no_grad  
-            with torch.no_grad():  
-                x = self.visual_encoder(x)  
-        else:  
-            x = self.visual_encoder(x)  
+        batch_size, num_patches, embed_dim = x.size()  
 
-        # 映射到分割任务的类别数  
+        # 计算特征图尺寸  
+        h = w = int(num_patches ** 0.5)  
+        x = x.permute(0, 2, 1).contiguous().view(batch_size, embed_dim, h, w)  # [batch_size, embed_dim, h, w]  
+        
+        # 经过卷积层  
         x = self.final_conv(x)  
-
-        # 确保输出尺寸与输入尺寸一致  
+        
+        # 如果需要，调整输出尺寸  
         if x.shape[-2:] != (self.input_size, self.input_size):  
             x = F.interpolate(  
                 x,  
@@ -94,6 +101,41 @@ class CLIPSegmentation(nn.Module):
                 mode='bilinear',  
                 align_corners=False  
             )  
+        return x  
+    
+    def _forward_features(self, x):  
+        """  
+        自定义的特征提取函数，用于获取每个补丁的特征。  
+
+        Args:  
+            x (Tensor): 输入张量，形状为 [batch_size, in_channels, height, width]  
+
+        Returns:  
+            Tensor: 特征张量，形状为 [batch_size, num_patches+1, embed_dim]  
+        """  
+        # Patch Embedding  
+        x = self.visual_encoder.conv1(x)  # [batch_size, embed_dim, grid_size, grid_size]  
+        x = x.reshape(x.shape[0], x.shape[1], -1)  # [batch_size, embed_dim, num_patches]  
+        x = x.permute(0, 2, 1)  # [batch_size, num_patches, embed_dim]  
+
+        # 添加 [CLS] 标记  
+        cls_token = self.visual_encoder.class_embedding.to(x.dtype) + torch.zeros(x.shape[0], 1, x.shape[-1], dtype=x.dtype, device=x.device)  
+        x = torch.cat([cls_token, x], dim=1)  # [batch_size, num_patches+1, embed_dim]  
+
+        # 添加位置嵌入  
+        x = x + self.visual_encoder.positional_embedding.to(x.dtype)  
+
+        x = self.visual_encoder.ln_pre(x)  
+
+        # 转置为 Transformer 的输入格式 [seq_len, batch_size, embed_dim]  
+        x = x.permute(1, 0, 2)  # [num_patches+1, batch_size, embed_dim]  
+
+        # 通过 Transformer 模块  
+        x = self.visual_encoder.transformer(x)  
+
+        # 转置回 [batch_size, num_patches+1, embed_dim]  
+        x = x.permute(1, 0, 2)  # [batch_size, num_patches+1, embed_dim]  
+
         return x  
 
     def _validate_input(self, x):  
@@ -109,3 +151,8 @@ class CLIPSegmentation(nn.Module):
                 f"期望输入尺寸为 {self.input_size}x{self.input_size}，"  
                 f"实际获得 {x.shape[2]}x{x.shape[3]}"  
             )
+
+# model = CLIPSegmentation(model_name='ViT-L-14', num_classes=9, input_size=224)  
+# dummy_input = torch.randn(1, 4, 224, 224)  # 批大小为 1，4 通道，224x224 的输入  
+# output = model(dummy_input)  
+# print("输出形状：", output.shape)

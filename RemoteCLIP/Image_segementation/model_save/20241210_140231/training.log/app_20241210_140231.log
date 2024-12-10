@@ -1,0 +1,2 @@
+2024-12-10 14:02:31,496 - INFO - Loading pretrained ViT-L-14 from OpenAI.
+2024-12-10 14:02:37,096 - ERROR - 程序出错: 'VisionTransformer' object has no attribute 'embed_dim'
