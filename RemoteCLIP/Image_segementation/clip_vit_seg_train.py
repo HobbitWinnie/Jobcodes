@@ -42,23 +42,25 @@ def init_training(config):
         ckpt_path=None,  # 如果有预训练权重，可在此指定
         num_classes=num_classes,  # 分割任务类别数
         input_size=config['dataset']['patch_size'],  # 输入图像大小，应与 ViT-L-14 模型匹配
-        freeze_clip=config['model'].get('freeze_clip', True)  # 根据需要冻结 CLIP 模型参数
+        freeze_clip=False  # 解冻 CLIP 模型参数
     ).to(device)
 
-    # 初始化优化器
-    optimizer = optim.AdamW(
-        filter(lambda p: p.requires_grad, model.parameters()),  # 只优化需要梯度更新的参数
-        lr=config['training']['learning_rate'],
-        weight_decay=config['training']['weight_decay'],
-        betas=(0.9, 0.999)
+    # 初始化优化器  
+    optimizer = optim.AdamW(  
+        filter(lambda p: p.requires_grad, model.parameters()),  
+        lr=1e-5,  # 将学习率调整为较小的值  
+        weight_decay=config['training']['weight_decay'],  
+        betas=(0.9, 0.999)  
     )
 
     # 初始化学习率调度器
-    scheduler = CosineAnnealingWarmRestarts(
+    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
         optimizer,
-        T_0=config['training']['scheduler_T0'],
-        T_mult=config['training']['scheduler_T_mult'],
-        eta_min=config['training']['min_lr']
+        mode='min',
+        factor=0.5,
+        patience=5,
+        min_lr=1e-7,
+        verbose=True
     )
 
     # 初始化损失函数
@@ -220,17 +222,18 @@ def train_loop(model, train_loader, val_loader, criterion, optimizer, scheduler,
             avg_dice_loss = epoch_dice_loss / batch_count
             epoch_time = time.time() - epoch_start
 
-            scheduler.step()
 
             metrics_history['train_loss'].append(avg_loss)
             metrics_history['train_focal_loss'].append(avg_focal_loss)
             metrics_history['train_dice_loss'].append(avg_dice_loss)
             metrics_history['learning_rate'].append(current_lr)
 
-            val_metrics = validate_model(
+            val_metrics = validate_model(   
                 model, val_loader, criterion, device,
                 config['dataset']['num_classes']
             )
+
+            scheduler.step(val_metrics['loss'])
 
             metrics_history['val_loss'].append(val_metrics['loss'])
             metrics_history['val_focal_loss'].append(val_metrics['focal_loss'])
