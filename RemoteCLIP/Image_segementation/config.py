@@ -50,7 +50,7 @@ class Config:
                 'epochs': 20000,  
                 'batch_size': 128,  
                 'learning_rate': 1e-5,
-                'min_lr': 1e-7,  
+                'min_lr': 1e-6,  
                 'weight_decay': 0.001,  
                 'patience': 100,  
                 'clip_grad_norm': 1.0,  

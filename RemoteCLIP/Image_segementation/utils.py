@@ -45,7 +45,7 @@ def load_and_save_data(image_path, label_path, output_dir, normalize = True):
     
     # 加载并处理图像数据  
     try:  
-        logger.info(f"Loading image from {image_path}")  
+        logging.info(f"Loading image from {image_path}")  
         with rasterio.open(image_path) as src:  
             image = src.read()  
             image_nodata = int(src.nodata)  
@@ -93,14 +93,14 @@ def load_and_save_data(image_path, label_path, output_dir, normalize = True):
                     dst.write_mask(image_mask.astype(np.uint8))  
         
     except Exception as e:  
-        logger.error(f"Error processing image: {e}")  
+        logging.error(f"Error processing image: {e}")  
         raise  
         
     # 加载并处理标签数据  
     labels = None  
     if label_path:  
         try:  
-            logger.info(f"Loading labels from {label_path}")  
+            logging.info(f"Loading labels from {label_path}")  
             with rasterio.open(label_path) as src:  
                 labels = src.read(1)  
                 labels_nodata = int(src.nodata)  
@@ -131,15 +131,15 @@ def load_and_save_data(image_path, label_path, output_dir, normalize = True):
                     dst.write_mask(label_mask.astype(np.uint8))  
                 
         except Exception as e:  
-            logger.error(f"Error processing labels: {e}")  
+            logging.error(f"Error processing labels: {e}")  
             raise  
     
     # 记录处理信息  
-    logger.info(f"Image shape: {image.shape}, dtype: {image.dtype}")  
+    logging.info(f"Image shape: {image.shape}, dtype: {image.dtype}")  
     if labels is not None:  
-        logger.info(f"Labels shape: {labels.shape}, dtype: {labels.dtype}")  
+        logging.info(f"Labels shape: {labels.shape}, dtype: {labels.dtype}")  
     
     if output_dir is not None:  
-        logger.info(f"Data processing completed. Results saved to {output_dir}")  
+        logging.info(f"Data processing completed. Results saved to {output_dir}")  
         
     return image, labels, image_meta  
