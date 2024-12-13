@@ -1,2 +1,0 @@
-2024-12-10 14:13:55,404 - INFO - Loading pretrained ViT-L-14 from OpenAI.
-2024-12-10 14:14:01,183 - ERROR - 程序出错: 'VisionTransformer' object has no attribute 'width'

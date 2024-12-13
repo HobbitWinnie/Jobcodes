@@ -1,2 +1,0 @@
-2024-12-10 10:24:42,588 - INFO - Loading pretrained ViT-L-14 from OpenAI.
-2024-12-10 11:48:01,976 - ERROR - 程序出错: create_dataloaders() got an unexpected keyword argument 'input_size'

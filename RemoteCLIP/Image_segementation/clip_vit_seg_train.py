@@ -30,8 +30,10 @@ def init_training(config):
     timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
     exp_dir = Path(config['paths']['model']['save_dir']) / timestamp
     exp_dir.mkdir(parents=True, exist_ok=True)
-
+    
     setup_logging(exp_dir / 'training.log')
+
+    # 保存配置文件  
     with open(exp_dir / 'config.json', 'w') as f:
         json.dump(config.config, f, indent=4)
 
@@ -39,29 +41,40 @@ def init_training(config):
     num_classes = config['dataset']['num_classes']
     model = CLIPSegmentation(
         model_name='ViT-L-14',  # 指定使用 ViT-L-14 模型
-        ckpt_path=None,  # 如果有预训练权重，可在此指定
+        ckpt_path=config['paths']['model']['clip_ckpt'],  # 如果有预训练权重，可在此指定
         num_classes=num_classes,  # 分割任务类别数
         input_size=config['dataset']['patch_size'],  # 输入图像大小，应与 ViT-L-14 模型匹配
         freeze_clip=False  # 解冻 CLIP 模型参数
     ).to(device)
+    logging.info("模型初始化完成")  
 
     # 初始化优化器  
     optimizer = optim.AdamW(  
         filter(lambda p: p.requires_grad, model.parameters()),  
-        lr=1e-5,  # 将学习率调整为较小的值  
+        lr=config['training']['learning_rate'],  
         weight_decay=config['training']['weight_decay'],  
         betas=(0.9, 0.999)  
     )
+    logging.info(f"优化器: AdamW, 初始学习率: {config['training']['learning_rate']}")  
 
-    # 初始化学习率调度器
-    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-        optimizer,
-        mode='min',
-        factor=0.5,
-        patience=5,
-        min_lr=1e-7,
-        verbose=True
-    )
+    # # 初始化学习率调度器
+    # scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+    #     optimizer,
+    #     mode='min',
+    #     factor=0.5,
+    #     patience=5,
+    #     min_lr=1e-7,
+    #     verbose=True
+    # )
+    
+    # 使用 CosineAnnealingWarmRestarts 学习率调度器  
+    scheduler = CosineAnnealingWarmRestarts(  
+        optimizer,  
+        T_0=config['training'].get('scheduler_T_0', 10),       # 初始周期  
+        T_mult=config['training'].get('scheduler_T_mult', 2),  # 周期倍率  
+        eta_min=config['training'].get('scheduler_eta_min', 1e-7)  # 最小学习率  
+    )  
+    logging.info("学习率调度器: CosineAnnealingWarmRestarts")  
 
     # 初始化损失函数
     criterion = CombinedLoss(
@@ -71,7 +84,6 @@ def init_training(config):
     ).to(device)
 
     return device, exp_dir, model, optimizer, scheduler, criterion
-
 
 def validate_model(model, val_loader, criterion, device, num_classes):
     """验证模型性能"""
@@ -233,8 +245,11 @@ def train_loop(model, train_loader, val_loader, criterion, optimizer, scheduler,
                 config['dataset']['num_classes']
             )
 
-            scheduler.step(val_metrics['loss'])
+            # scheduler.step(val_metrics['loss'])
 
+            # 更新学习率调度器（对于CosineAnnealingWarmRestarts，可以在每个batch或epoch后更新）  
+            scheduler.step()  
+        
             metrics_history['val_loss'].append(val_metrics['loss'])
             metrics_history['val_focal_loss'].append(val_metrics['focal_loss'])
             metrics_history['val_dice_loss'].append(val_metrics['dice_loss'])

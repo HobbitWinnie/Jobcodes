@@ -21,11 +21,6 @@ class CLIPSegmentation(nn.Module):
         # 初始化 CLIP 模型  
         self._init_clip_model(model_name, ckpt_path, freeze_clip)  
 
-        # print(dir(self.visual_encoder.transformer))
-        # print("conv1.out_channels:", self.visual_encoder.conv1.out_channels)  
-        # print("transformer.width:", getattr(self.visual_encoder.transformer, 'width', 'Not Available'))  
-        # print("output_dim:", getattr(self.visual_encoder, 'output_dim', 'Not Available'))
-
         # 添加最终的卷积层，用于将 CLIP 特征映射到分割类别数  
         self.final_conv = nn.Conv2d(  
             in_channels=self.visual_encoder.transformer.width,  # ViT 模型的嵌入维度  
@@ -40,11 +35,7 @@ class CLIPSegmentation(nn.Module):
         try:  
             device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')  
             # 加载预训练的 CLIP 模型  
-            model, _, preprocess = open_clip.create_model_and_transforms(model_name, pretrained='openai')  
-
-            if ckpt_path:  # 如果提供了检查点路径，则加载自定义权重  
-                ckpt = torch.load(ckpt_path, map_location=device)  
-                model.load_state_dict(ckpt)  
+            model, _, preprocess = open_clip.create_model_and_transforms(model_name, pretrained='openai')   #             
 
             self.visual_encoder = model.visual  
             self.visual_encoder.eval()  
@@ -72,6 +63,14 @@ class CLIPSegmentation(nn.Module):
             if freeze_clip:  
                 for param in self.visual_encoder.parameters():  
                     param.requires_grad = False  
+            
+            if ckpt_path:  # 如果提供了检查点路径，则加载自定义权重  
+                ckpt = torch.load(ckpt_path, map_location=device)  
+                # 如果 checkpoint 是包含 'state_dict' 的字典  
+                if isinstance(ckpt, dict) and 'state_dict' in ckpt:  
+                    ckpt = ckpt['state_dict']  
+                # 加载状态字典，允许某些键不存在  
+                self.load_state_dict(ckpt, strict=False)  
 
         except Exception as e:  
             print(f"CLIP 模型加载失败: {str(e)}")  
