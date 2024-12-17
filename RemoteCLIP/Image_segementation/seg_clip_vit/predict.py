@@ -11,10 +11,10 @@ import torch.nn.functional as F
 from torch.cuda.amp import autocast
 from tqdm import tqdm
 from pathlib import Path
-from nw.Codes.RemoteCLIP.Image_segementation.clip_rn50_unet_model import UNetWithCLIP
+from clip_vit_seg_model import UNetWithCLIP
 from config import get_config
-from data_preparation import load_and_save_data
-from dataset import split_image_into_patches, reconstruct_image_from_patches, CustomTransform
+from ..data.data_preparation import load_and_save_data
+from ..data.dataset import split_image_into_patches, reconstruct_image_from_patches, CustomTransform
 from utils import setup_logging
 
 

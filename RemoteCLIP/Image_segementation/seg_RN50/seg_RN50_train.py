@@ -1,52 +1,48 @@
-import torch
-import torch.optim as optim
-import logging
-import time
-import numpy as np
-import json
-import torch.nn as nn
+import torch  
+import torch.optim as optim  
+import logging  
+import time  
+import numpy as np  
+import json  
+import torch.nn as nn  
 import gc  
-from torch.optim.lr_scheduler import CosineAnnealingWarmRestarts
-from pathlib import Path
-from datetime import datetime
-from torch.cuda.amp import GradScaler, autocast
-from dataset import create_dataloaders
-from clip_rn50_unet_model import UNetWithCLIP
-from config import get_config
-from combined_loss import CombinedLoss
+from torch.optim.lr_scheduler import CosineAnnealingWarmRestarts  
+from pathlib import Path  
+from datetime import datetime  
+from torch.cuda.amp import GradScaler, autocast  
+from dataset import create_dataloaders  
+from seg_RN50_model import CLIPSegmentation  
+from config import get_config  
+from combined_loss import CombinedLoss  
 from utils import setup_logging
 
 
 def init_training(config):  
     """初始化训练组件"""  
-    # 设置设备并确保cudnn基准测试  
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')  
     if torch.cuda.is_available():  
         torch.backends.cudnn.benchmark = True  
         torch.backends.cudnn.deterministic = False  
         logging.info(f"CUDA版本: {torch.version.cuda}")  
         logging.info(f"可用GPU: {torch.cuda.get_device_name(0)}")  
-        logging.info(f"当前GPU内存使用: {torch.cuda.memory_allocated(0) / 1024**2:.2f}MB")  
+        logging.info(f"当前GPU内存使用: {torch.cuda.memory_allocated(0) / 1024 ** 2:.2f}MB")  
 
-    # 创建实验目录  
     timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')  
     exp_dir = Path(config['paths']['model']['save_dir']) / timestamp  
     exp_dir.mkdir(parents=True, exist_ok=True)  
 
-    # 设置日志  
     setup_logging(exp_dir / 'training.log')  
     with open(exp_dir / 'config.json', 'w') as f:  
         json.dump(config.config, f, indent=4)  
 
     # 初始化模型  
     num_classes = config['dataset']['num_classes']  
-    model = UNetWithCLIP(  
-        model_name=config['model']['model_name'],  
-        ckpt_path=config['paths']['model']['clip_ckpt'],  
-        num_classes=num_classes,  
-        dropout_rate=0.2,  
-        use_aux_loss=True,  
-        initial_features=128  
+    model = CLIPSegmentation(  
+        model_name='RN50',  # CLIP 模型名称  
+        # ckpt_path=config['paths']['model']['clip_ckpt'],  # CLIP 检查点路径  
+        ckpt_path=None,
+        num_classes=num_classes,  # 分割任务类别数  
+        input_size=config['dataset']['patch_size']  # 输入图像大小  
     ).to(device)  
 
     # 初始化优化器  
@@ -74,6 +70,7 @@ def init_training(config):
 
     return device, exp_dir, model, optimizer, scheduler, criterion  
 
+
 def validate_model(model, val_loader, criterion, device, num_classes):  
     """验证模型性能"""  
     model.eval()  
@@ -87,14 +84,14 @@ def validate_model(model, val_loader, criterion, device, num_classes):
             images, masks = batch[0].to(device), batch[1].to(device)  
 
             with autocast():  
-                outputs = model(images)  
+                outputs = model(images)  # 新模型直接返回张量输出  
                 loss, loss_info = criterion(outputs, masks)  
 
             val_loss += loss.item()  
             loss_components['focal_loss'] += loss_info['focal_loss']  
             loss_components['dice_loss'] += loss_info['dice_loss']  
 
-            preds = outputs['main'].argmax(1) if isinstance(outputs, dict) else outputs.argmax(1)  
+            preds = outputs.argmax(1)  # 新模型的输出处理逻辑  
 
             # 更新混淆矩阵  
             for true, pred in zip(masks.cpu().numpy().flatten(), preds.cpu().numpy().flatten()):  
@@ -140,7 +137,6 @@ def validate_model(model, val_loader, criterion, device, num_classes):
                 'sample_count': int(metrics['total'])  
             }  
 
-    # 计算总体指标  
     total_correct = sum(m['correct'] for m in class_metrics.values())  
     total_samples = sum(m['total'] for m in class_metrics.values())  
     accuracy = total_correct / total_samples if total_samples > 0 else 0  
@@ -158,6 +154,7 @@ def validate_model(model, val_loader, criterion, device, num_classes):
 
     return validation_results  
 
+
 def train_loop(model, train_loader, val_loader, criterion, optimizer, scheduler, device, config, exp_dir):  
     """训练循环"""  
     scaler = GradScaler()  
@@ -165,7 +162,6 @@ def train_loop(model, train_loader, val_loader, criterion, optimizer, scheduler,
     total_epochs = config['training']['epochs']  
     max_grad_norm = config['training'].get('max_grad_norm', 1.0)  
 
-    # 记录训练历史  
     metrics_history = {  
         'train_loss': [],  
         'train_focal_loss': [],  
@@ -204,16 +200,6 @@ def train_loop(model, train_loader, val_loader, criterion, optimizer, scheduler,
                     continue  
 
                 scaler.scale(loss).backward()  
-
-                # 在 backward() 之后，添加以下代码  
-                for name, param in model.named_parameters():  
-                    if param.grad is not None:  
-                        if torch.isnan(param.grad).any() or torch.isinf(param.grad).any():  
-                            logging.warning(f"梯度中检测到 NaN 或 Inf，参数: {name}")  
-                    if torch.isnan(param).any() or torch.isinf(param).any():  
-                        logging.warning(f"参数中检测到 NaN 或 Inf，参数: {name}")
-
-                # 添加梯度剪切  
                 if max_grad_norm > 0:  
                     scaler.unscale_(optimizer)  
                     torch.nn.utils.clip_grad_norm_(model.parameters(), max_grad_norm)  
@@ -221,45 +207,37 @@ def train_loop(model, train_loader, val_loader, criterion, optimizer, scheduler,
                 scaler.step(optimizer)  
                 scaler.update()  
 
-                # 更新损失统计  
                 epoch_loss += loss.item()  
                 epoch_focal_loss += loss_info['focal_loss']  
                 epoch_dice_loss += loss_info['dice_loss']  
                 batch_count += 1  
 
-                # 清理内存  
                 del outputs, loss  
                 torch.cuda.empty_cache()  
 
-            # 计算平均损失  
             avg_loss = epoch_loss / batch_count  
             avg_focal_loss = epoch_focal_loss / batch_count  
             avg_dice_loss = epoch_dice_loss / batch_count  
             epoch_time = time.time() - epoch_start  
 
-            # 更新学习率  
             scheduler.step()  
 
-            # 记录训练指标  
             metrics_history['train_loss'].append(avg_loss)  
             metrics_history['train_focal_loss'].append(avg_focal_loss)  
             metrics_history['train_dice_loss'].append(avg_dice_loss)  
             metrics_history['learning_rate'].append(current_lr)  
 
-            # 验证  
             val_metrics = validate_model(  
                 model, val_loader, criterion, device,  
                 config['dataset']['num_classes']  
             )  
 
-            # 更新验证指标历史  
             metrics_history['val_loss'].append(val_metrics['loss'])  
             metrics_history['val_focal_loss'].append(val_metrics['focal_loss'])  
             metrics_history['val_dice_loss'].append(val_metrics['dice_loss'])  
             metrics_history['val_miou'].append(val_metrics['mean_iou'])  
             metrics_history['val_accuracy'].append(val_metrics['accuracy'])  
 
-            # 输出详细的训练信息  
             logging.info(  
                 f"Epoch {epoch + 1}/{total_epochs} [{epoch_time:.2f}s], "  
                 f"Training: [{avg_loss:.4f} (Focal: {avg_focal_loss:.4f}, Dice: {avg_dice_loss:.4f})], "  
@@ -267,87 +245,57 @@ def train_loop(model, train_loader, val_loader, criterion, optimizer, scheduler,
                 f"Acc = {val_metrics['accuracy']:.4f}, mIoU = {val_metrics['mean_iou']:.4f}], LR: {current_lr:.6f}"  
             )  
 
-            # 保存检查点  
-            checkpoint = {  
-                'epoch': epoch + 1,  
-                'model_state_dict': model.state_dict(),  
-                'optimizer_state_dict': optimizer.state_dict(),  
-                'scheduler_state_dict': scheduler.state_dict(),  
-                'scaler_state_dict': scaler.state_dict(),  
-                'best_miou': best_miou,  
-                'metrics_history': metrics_history,  
-                'config': config.config  
-            }  
-
-            # 保存最佳模型  
             if val_metrics['mean_iou'] > best_miou:  
                 best_miou = val_metrics['mean_iou']  
-                torch.save(checkpoint, exp_dir / 'best_model.pth')  
+                torch.save(  
+                    model.state_dict(), exp_dir / 'best_model.pth'  
+                )  
                 logging.info(f"保存最佳模型 (mIoU: {best_miou:.4f})")  
-
-            # 保存训练指标  
-            with open(exp_dir / 'metrics_history.json', 'w') as f:  
-                json.dump(metrics_history, f, indent=4)  
-
-            # 学习率检查  
-            if current_lr < 1e-7:  
-                logging.info("学习率过小，停止训练")  
-                break  
-
-            # 垃圾回收  
-            gc.collect()  
 
     except KeyboardInterrupt:  
         logging.info("训练被手动中断，保存当前模型...")  
-        torch.save(model.state_dict(), exp_dir / 'interrupted_model.pth')  
     except Exception as e:  
         logging.error(f"训练出错: {str(e)}")  
         raise  
 
     return best_miou, metrics_history  
 
-def main():
-    """主程序入口"""
-    try:
-        # 加载配置
-        config = get_config()
-    
-        # 初始化训练组件
-        device, exp_dir, model, optimizer, scheduler, criterion = init_training(config)
 
-        # 创建数据加载器
-        train_loader, val_loader = create_dataloaders(
-            image_dir= Path(config['paths']['data']['image_dir']),
-            labels_dir=Path(config['paths']['data']['label_dir']),
-            batch_size=config['training']['batch_size'],
-            train_ratio=config['dataset']['train_val_split'],
-            num_workers=config['dataset']['num_workers'],
-        )
+def main():  
+    try:  
+        config = get_config()  
+        device, exp_dir, model, optimizer, scheduler, criterion = init_training(config)  
+
+        train_loader, val_loader = create_dataloaders(  
+            image_dir=Path(config['paths']['data']['image_dir']),  
+            labels_dir=Path(config['paths']['data']['label_dir']),  
+            batch_size=config['training']['batch_size'],  
+            train_ratio=config['dataset']['train_val_split'],  
+            num_workers=config['dataset']['num_workers'],  
+        )  
 
         if torch.cuda.device_count() > 1:  
             model = nn.DataParallel(model)  
             logging.info(f"使用 {torch.cuda.device_count()} 个GPU训练")  
 
-        # 开始训练
-        best_miou, metrics_history = train_loop(
-            model, train_loader, val_loader, criterion,
-            optimizer, scheduler, device, config, exp_dir
-        )
-        
-        # 训练完成后的总结
-        print("\n训练总结:")
-        print(f"最佳mIoU: {best_miou:.4f}")
-        
-        # 保存最终的训练历史
-        with open(exp_dir / 'final_metrics.json', 'w') as f:
-            json.dump({
-                'best_miou': float(best_miou),
-                'metrics_history': metrics_history
-            }, f, indent=4)
+        best_miou, metrics_history = train_loop(  
+            model, train_loader, val_loader, criterion,  
+            optimizer, scheduler, device, config, exp_dir  
+        )  
 
-    except Exception as e:
-        logging.error(f"程序出错: {str(e)}")
-        raise
+        print("\n训练总结:")  
+        print(f"最佳mIoU: {best_miou:.4f}")  
 
-if __name__ == '__main__':
+        with open(exp_dir / 'final_metrics.json', 'w') as f:  
+            json.dump({  
+                'best_miou': float(best_miou),  
+                'metrics_history': metrics_history  
+            }, f, indent=4)  
+
+    except Exception as e:  
+        logging.error(f"程序出错: {str(e)}")  
+        raise  
+
+
+if __name__ == '__main__':  
     main()

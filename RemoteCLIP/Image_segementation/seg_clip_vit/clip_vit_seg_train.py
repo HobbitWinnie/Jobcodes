@@ -1,4 +1,7 @@
 
+import sys
+sys.path.append('/home/nw/Codes/RemoteCLIP/Image_segementation')  
+
 import torch
 import torch.optim as optim
 import logging
@@ -10,8 +13,8 @@ from torch.optim.lr_scheduler import CosineAnnealingWarmRestarts
 from pathlib import Path
 from datetime import datetime
 from torch.cuda.amp import GradScaler, autocast
-from dataset import create_dataloaders
-from clip_vit_seg_model import CLIPSegmentation
+from data.dataset import create_dataloaders
+from clip_vit_seg_model import CLIPVITSegmentation
 from config import get_config
 from combined_loss import CombinedLoss
 from utils import setup_logging
@@ -28,7 +31,7 @@ def init_training(config):
         logging.info(f"当前GPU内存使用: {torch.cuda.memory_allocated(0) / 1024 ** 2:.2f}MB")
 
     timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-    exp_dir = Path(config['paths']['model']['save_dir']) / timestamp
+    exp_dir = Path(__file__).parent/'model_save'/ timestamp
     exp_dir.mkdir(parents=True, exist_ok=True)
     
     setup_logging(exp_dir / 'training.log')
@@ -38,11 +41,11 @@ def init_training(config):
         json.dump(config.config, f, indent=4)
 
     # 初始化模型
-    num_classes = config['dataset']['num_classes']
-    model = CLIPSegmentation(
+    class_names = ['背景', '小麦', '玉米', '向日葵', '西瓜', '西红柿', '甜菜', '葱', '西葫芦']  
+    model = CLIPVITSegmentation(
         model_name='ViT-L-14',  # 指定使用 ViT-L-14 模型
+        class_names = class_names,
         ckpt_path=config['paths']['model']['clip_ckpt'],  # 如果有预训练权重，可在此指定
-        num_classes=num_classes,  # 分割任务类别数
         input_size=config['dataset']['patch_size'],  # 输入图像大小，应与 ViT-L-14 模型匹配
         freeze_clip=False  # 解冻 CLIP 模型参数
     ).to(device)

@@ -3,32 +3,30 @@ import torch.nn as nn
 import torch.nn.functional as F  
 import open_clip  
 
-class CLIPSegmentation(nn.Module):  
-    def __init__(self, model_name, ckpt_path=None, num_classes=9, input_size=224, freeze_clip=True):  
+class CLIPVITSegmentation(nn.Module):  
+    def __init__(self, model_name, class_names, ckpt_path=None, input_size=224, freeze_clip=True):  
         """  
-        使用 ViT-L-14 的 CLIP 模型进行分割任务，支持 4 通道输入。
+        使用 ViT-L-14 的 CLIP 模型进行分割任务，支持 4 通道输入, 并利用文本信息。  
 
         Args:  
             model_name (str): CLIP 模型名称（例如 'ViT-L-14'）  
+            class_names (list of str): 分割类别的名称列表，用于生成文本特征  
             ckpt_path (str, optional): CLIP 检查点路径。如果为空，则加载预训练权重。  
-            num_classes (int): 分割任务的类别数  
             input_size (int): 输入图像的大小  
             freeze_clip (bool): 是否冻结 CLIP 模型的权重  
         """  
-        super(CLIPSegmentation, self).__init__()  
+        super(CLIPVITSegmentation, self).__init__()  
         self.input_size = input_size  
+        self.class_names = class_names  
+        self.num_classes = len(class_names)  
 
         # 初始化 CLIP 模型  
         self._init_clip_model(model_name, ckpt_path, freeze_clip)  
 
-        # 添加最终的卷积层，用于将 CLIP 特征映射到分割类别数  
-        self.final_conv = nn.Conv2d(  
-            in_channels=self.visual_encoder.transformer.width,  # ViT 模型的嵌入维度  
-            out_channels=num_classes,  
-            kernel_size=1  
-        )  
+        # 获取类别的文本特征  
+        self.text_features = self._get_text_features(self.class_names)  
 
-    def _init_clip_model(self, model_name, ckpt_path=None, freeze_clip=True):  
+    def _init_clip_model(self, model_name, ckpt_path=None, freeze_clip=False):  
         """  
         初始化 CLIP 模型，并修改输入层支持 4 通道数据。  
         """  
@@ -38,7 +36,8 @@ class CLIPSegmentation(nn.Module):
             model, _, preprocess = open_clip.create_model_and_transforms(model_name, pretrained='openai')   #             
 
             self.visual_encoder = model.visual  
-            self.visual_encoder.eval()  
+            self.text_encoder = model.encode_text  # 文本编码器  
+            # self.visual_encoder.eval()  
 
             # 修改输入层支持 4 通道  
             # 对于 ViT 模型，输入层是 conv1（Patch Embedding）  
@@ -63,6 +62,8 @@ class CLIPSegmentation(nn.Module):
             if freeze_clip:  
                 for param in self.visual_encoder.parameters():  
                     param.requires_grad = False  
+                for param in self.text_encoder.parameters():  
+                    param.requires_grad = False 
             
             if ckpt_path:  # 如果提供了检查点路径，则加载自定义权重  
                 ckpt = torch.load(ckpt_path, map_location=device)  
@@ -75,33 +76,63 @@ class CLIPSegmentation(nn.Module):
         except Exception as e:  
             print(f"CLIP 模型加载失败: {str(e)}")  
             raise RuntimeError(f"CLIP 模型加载失败: {str(e)}")  
+        
+    def _get_text_features(self, class_names):  
+        """  
+        获取每个类别名称的文本特征。  
+
+        Args:  
+            class_names (list of str): 类别名称列表  
+
+        Returns:  
+            Tensor: 文本特征，形状为 [num_classes, embed_dim]  
+        """  
+        device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')  
+
+        with torch.no_grad():  
+            # 对类别名称进行 tokenize  
+            text_tokens = open_clip.tokenizer.tokenize(class_names).to(device)  
+            # 获取文本特征  
+            text_features = self.text_encoder(text_tokens)  
+            # 标准化  
+            text_features = text_features / text_features.norm(dim=-1, keepdim=True)  
+        return text_features  # [num_classes, embed_dim]  
 
     def forward(self, x):  
         self._validate_input(x)  
-        
-        # 获取中间特征  
-        x = self._forward_features(x)  # [batch_size, num_patches+1, embed_dim]  
-        x = x[:, 1:, :]  # 移除 [CLS] 标记  
 
-        batch_size, num_patches, embed_dim = x.size()  
+        # 获取图像的视觉特征  
+        visual_feats = self._forward_features(x)  # [batch_size, num_patches+1, embed_dim]  
+        batch_size, num_tokens, embed_dim = visual_feats.size()  
 
-        # 计算特征图尺寸  
+        # 移除 [CLS] 标记，仅保留补丁特征  
+        patch_feats = visual_feats[:, 1:, :]  # [batch_size, num_patches, embed_dim]  
+
+        # 标准化视觉特征  
+        patch_feats = patch_feats / patch_feats.norm(dim=-1, keepdim=True)  # [batch_size, num_patches, embed_dim]  
+
+        # 计算视觉特征与文本特征的相似度  
+        # 转置文本特征以便矩阵乘法  
+        text_feats = self.text_features.t()  # [embed_dim, num_classes]  
+
+        # 计算相似度  
+        logits = torch.matmul(patch_feats, text_feats)  # [batch_size, num_patches, num_classes]  
+
+        # 将 logits 重新调整为特征图形状  
+        num_patches = patch_feats.shape[1]  
         h = w = int(num_patches ** 0.5)  
-        x = x.permute(0, 2, 1).contiguous().view(batch_size, embed_dim, h, w)  # [batch_size, embed_dim, h, w]  
-        
-        # 经过卷积层  
-        x = self.final_conv(x)  
-        
+        logits = logits.permute(0, 2, 1).contiguous().view(batch_size, self.num_classes, h, w)  # [batch_size, num_classes, h, w]  
+
         # 如果需要，调整输出尺寸  
-        if x.shape[-2:] != (self.input_size, self.input_size):  
-            x = F.interpolate(  
-                x,  
+        if logits.shape[-2:] != (self.input_size, self.input_size):  
+            logits = F.interpolate(  
+                logits,  
                 size=(self.input_size, self.input_size),  
                 mode='bilinear',  
                 align_corners=False  
             )  
-        return x  
-    
+        return logits  # [batch_size, num_classes, H, W]  
+
     def _forward_features(self, x):  
         """  
         自定义的特征提取函数，用于获取每个补丁的特征。  
@@ -149,7 +180,7 @@ class CLIPSegmentation(nn.Module):
             raise ValueError(  
                 f"期望输入尺寸为 {self.input_size}x{self.input_size}，"  
                 f"实际获得 {x.shape[2]}x{x.shape[3]}"  
-            )
+            )  
 
 # model = CLIPSegmentation(model_name='ViT-L-14', num_classes=9, input_size=224)  
 # dummy_input = torch.randn(1, 4, 224, 224)  # 批大小为 1，4 通道，224x224 的输入  
