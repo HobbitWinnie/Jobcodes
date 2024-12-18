@@ -1,2 +1,0 @@
-2024-12-18 10:52:03,890 - INFO - Loading pretrained ViT-L-14 from OpenAI.
-2024-12-18 10:52:09,823 - ERROR - 程序出错: local variable 'hook' referenced before assignment

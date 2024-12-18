@@ -1,0 +1,8 @@
+2024-12-18 16:24:09,172 - INFO - Loading pretrained ViT-L-14 from OpenAI.
+2024-12-18 16:24:16,491 - INFO - 模型初始化完成
+2024-12-18 16:24:16,497 - INFO - 优化器: AdamW, 初始学习率: 1e-05
+2024-12-18 16:24:16,498 - INFO - 学习率调度器: CosineAnnealingWarmRestarts
+2024-12-18 16:24:16,507 - INFO - 使用 4 个GPU训练
+2024-12-18 16:24:16,507 - INFO - 开始训练 - 总轮次: 20000
+2024-12-18 16:25:25,496 - ERROR - 训练出错: 'list' object has no attribute 'to'
+2024-12-18 16:25:25,497 - ERROR - 程序出错: 'list' object has no attribute 'to'

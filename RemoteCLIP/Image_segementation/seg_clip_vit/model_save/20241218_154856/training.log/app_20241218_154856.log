@@ -1,0 +1,2 @@
+2024-12-18 15:48:56,689 - INFO - Loading pretrained ViT-L-14 from OpenAI.
+2024-12-18 15:49:17,863 - ERROR - 程序出错: CLIP 模型加载失败: 'function' object has no attribute 'eval'

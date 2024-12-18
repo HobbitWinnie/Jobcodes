@@ -67,6 +67,18 @@ class RemoteSensingDataset(Dataset):
         self.images_dir = images_dir  
         self.labels_dir = labels_dir  
         self.preprocess_func = CustomTransform()
+
+        self.class_names = [
+            'background',  
+            'wheat',  
+            'corn',  
+            'sunflower',  
+            'watermelon',  
+            'tomato',  
+            'sugar beet',  
+            'green onion',  
+            'zucchini'  
+        ]
         
         # 获取所有图像和标签文件名  
         self.image_files = sorted([f for f in os.listdir(images_dir) if f.endswith('.tif')])  
@@ -100,10 +112,17 @@ class RemoteSensingDataset(Dataset):
         # 转换标签为 Tensor  
         label = torch.from_numpy(label).long()
 
+        # 提取类别名称  
+        unique_labels = np.unique(label)  
+        
+        # 创建类别名称映射  
+        label_to_classname = {label_value: self.class_names[label_value] for label_value in unique_labels if label_value < len(self.class_names)}  
+        text_inputs = ' '.join(label_to_classname[label_value] for label_value in unique_labels if label_value < len(self.class_names))  
+
         # 验证标签值是否在有效范围内（假设类别数为 9）  
         validate_labels(label)  
 
-        return image, label  
+        return image, label, text_inputs
 
 def validate_labels(labels: torch.Tensor, num_classes: int = 9) -> None:  
     """验证标签值是否在有效范围内"""  

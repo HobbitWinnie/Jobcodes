@@ -56,9 +56,10 @@ def init_training(config):
     # 初始化模型
     model = CLIPVITSegmentation(
         model_name='ViT-L-14',  # 指定使用 ViT-L-14 模型
-        class_names = class_names,
+        num_classes = 9,
         ckpt_path='/home/nw/Assets/RemoteCLIP/ckpt/RemoteCLIP-ViT-L-14.pt',  # 如果有预训练权重，可在此指定
         input_size=config['dataset']['patch_size'],  # 输入图像大小，应与 ViT-L-14 模型匹配
+        freeze_clip=False
     ).to(device)
     logging.info("模型初始化完成")  
 
@@ -109,10 +110,10 @@ def validate_model(model, val_loader, criterion, device, num_classes):
 
     with torch.no_grad():
         for batch in val_loader:
-            images, masks = batch[0].to(device), batch[1].to(device)
+            images, masks, text = batch[0].to(device), batch[1].to(device), batch[2].to(device)
 
             with autocast():
-                outputs = model(images)
+                outputs = model(images, text)
                 loss, loss_info = criterion(outputs, masks)
 
             val_loss += loss.item()
@@ -215,12 +216,12 @@ def train_loop(model, train_loader, val_loader, criterion, optimizer, scheduler,
             current_lr = optimizer.param_groups[0]['lr']
 
             for batch in train_loader:
-                images, masks = batch[0].to(device), batch[1].to(device)
+                images, masks, text = batch[0].to(device), batch[1].to(device), batch[2].to(device)
 
                 optimizer.zero_grad(set_to_none=True)
 
                 with autocast():
-                    outputs = model(images)
+                    outputs = model(images, text)
                     loss, loss_info = criterion(outputs, masks)
 
                 if not torch.isfinite(loss):

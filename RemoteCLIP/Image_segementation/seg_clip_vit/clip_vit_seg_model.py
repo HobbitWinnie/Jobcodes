@@ -2,151 +2,197 @@ import torch
 import torch.nn as nn  
 import torch.nn.functional as F  
 import open_clip  
-import logging  
-
-class Attention(nn.Module):  
-    def __init__(self, embed_dim):  
-        super(Attention, self).__init__()  
-        self.query = nn.Linear(embed_dim, embed_dim)  
-        self.key = nn.Linear(embed_dim, embed_dim)  
-        self.value = nn.Linear(embed_dim, embed_dim)  
-
-    def forward(self, x_visual, x_textual):  
-        q = self.query(x_visual)  # [batch_size, num_patches, embed_dim]  
-        k = self.key(x_textual)    # [batch_size, num_classes, embed_dim]  
-        v = self.value(x_textual)  # [batch_size, num_classes, embed_dim]  
-
-        att_weights = torch.matmul(q, k.transpose(1, 2)) / (q.size(-1) ** 0.5)  
-        att_weights = F.softmax(att_weights, dim=-1)  
-
-        attended_features = torch.matmul(att_weights, v)  
-        return attended_features  
 
 class CLIPVITSegmentation(nn.Module):  
-    def __init__(self, model_name, class_names, ckpt_path=None, input_size=224, freeze_clip=True):  
+    def __init__(self, model_name, ckpt_path=None, num_classes=9, input_size=224, freeze_clip=True):  
+        """  
+        使用 ViT-L-14 的 CLIP 模型进行分割任务，支持 4 通道输入。  
+
+        Args:  
+            model_name (str): CLIP 模型名称（例如 'ViT-L-14'）  
+            ckpt_path (str, optional): CLIP 检查点路径。如果为空，则加载预训练权重。  
+            num_classes (int): 分割任务的类别数  
+            input_size (int): 输入图像的大小  
+            freeze_clip (bool): 是否冻结 CLIP 模型的权重  
+        """  
         super(CLIPVITSegmentation, self).__init__()  
         self.input_size = input_size  
-        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')  
-        self._init_clip_model(model_name, class_names, ckpt_path, freeze_clip)   
 
-    def _init_clip_model(self, model_name, class_names, ckpt_path=None, freeze_clip=False):  
+        # 初始化 CLIP 模型  
+        self._init_clip_model(model_name, ckpt_path, freeze_clip)  
+
+        # 添加最终的卷积层，用于将 CLIP 特征映射到分割类别数  
+        self.final_conv = nn.Conv2d(  
+            in_channels=self.visual_encoder.transformer.width,  # ViT 模型的嵌入维度  
+            out_channels=num_classes,  
+            kernel_size=1  
+        )  
+
+        self.text_to_visual = nn.Linear(768, 1024)  # 768到1024的线性变换  
+
+    def _init_clip_model(self, model_name, ckpt_path=None, freeze_clip=False):  
+        """  
+        初始化 CLIP 模型，并修改输入层支持 4 通道数据。  
+        """  
         try:  
-            # 加载预训练的 CLIP 模型  
-            clip_model, _, _ = open_clip.create_model_and_transforms(model_name, pretrained='openai')  
-            clip_model.to(self.device)  # 确保将模型放置于正确的设备  
-            self.visual_encoder = clip_model.visual  
+            device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')  
+            model, _, _ = open_clip.create_model_and_transforms(model_name, pretrained='openai')  
 
-            # 修改第一层卷积层以接受 4 通道输入  
+            # 用于提取文本和视觉编码器  
+            self.visual_encoder = model.visual  
+            self.text_encoder = model  # 这里将 self.text_encoder 指向整个模型  
+            
+            self.visual_encoder.eval()  
+            # self.text_encoder.eval()  
+
+            # 修改输入层支持 4 通道  
+            original_conv1 = self.visual_encoder.conv1  
             self.visual_encoder.conv1 = nn.Conv2d(  
-                in_channels=4,  
-                out_channels=self.visual_encoder.conv1.out_channels,  
-                kernel_size=self.visual_encoder.conv1.kernel_size,  
-                stride=self.visual_encoder.conv1.stride,  
-                padding=self.visual_encoder.conv1.padding,  
-                bias=self.visual_encoder.conv1.bias  
+                in_channels=4,  # 修改为 4 通道  
+                out_channels=original_conv1.out_channels,  
+                kernel_size=original_conv1.kernel_size,  
+                stride=original_conv1.stride,  
+                padding=original_conv1.padding,  
+                bias=original_conv1.bias  
             )  
 
             # 初始化新通道的权重  
             with torch.no_grad():  
-                original_weights = self.visual_encoder.conv1.weight.clone()  
-                self.visual_encoder.conv1.weight[:, :3, :, :] = original_weights[:, :3, :, :]  
-                self.visual_encoder.conv1.weight[:, 3:4, :, :] = original_weights[:, :3, :, :].mean(dim=1, keepdim=True)  
+                self.visual_encoder.conv1.weight[:, :3, :, :] = original_conv1.weight  # 复制原始 3 通道权重  
+                avg_weight = original_conv1.weight[:, :3, :, :].mean(dim=1, keepdim=True)  
+                self.visual_encoder.conv1.weight[:, 3:4, :, :] = avg_weight  
 
+            # 冻结 CLIP 模型的权重（可选）  
             if freeze_clip:  
-                for param in clip_model.parameters():  
+                for param in self.visual_encoder.parameters():  
                     param.requires_grad = False  
-
-            with torch.no_grad():  
-                text_tokens = open_clip.tokenize(class_names).to(self.device)  # 确保文本标记在同一设备  
-                self.text_features = clip_model.encode_text(text_tokens)  
-                self.text_features /= self.text_features.norm(dim=-1, keepdim=True)  
-
-            self.visual_embed_dim = self.visual_encoder.conv1.out_channels  
-            self.embed_dim = self.text_features.shape[1]  
-            if self.visual_embed_dim != self.embed_dim:  
-                self.vis_proj = nn.Linear(self.visual_embed_dim, self.embed_dim).to(self.device)  
+                # for param in self.text_encoder.parameters():  
+                #     param.requires_grad = False  
             
-            self.attention = Attention(self.embed_dim).to(self.device)  
-
-            self.decoder = nn.Sequential(  
-                nn.ConvTranspose2d(self.embed_dim, 256, kernel_size=4, stride=2, padding=1),  
-                nn.BatchNorm2d(256),  
-                nn.ReLU(inplace=True),  
-                nn.ConvTranspose2d(256, 128, kernel_size=4, stride=2, padding=1),  
-                nn.BatchNorm2d(128),  
-                nn.ReLU(inplace=True),  
-                nn.ConvTranspose2d(128, len(class_names), kernel_size=4, stride=2, padding=1)  
-            ).to(self.device)  
-
-            if ckpt_path:  
-                ckpt = torch.load(ckpt_path, map_location=self.device)  
-                if 'state_dict' in ckpt:  
+            if ckpt_path:  # 如果提供了检查点路径，则加载自定义权重  
+                ckpt = torch.load(ckpt_path, map_location=device)  
+                if isinstance(ckpt, dict) and 'state_dict' in ckpt:  
                     ckpt = ckpt['state_dict']  
                 self.load_state_dict(ckpt, strict=False)  
-        
+
         except Exception as e:  
-            logging.error(f"CLIP 模型加载失败: {str(e)}")  
+            print(f"CLIP 模型加载失败: {str(e)}")  
             raise RuntimeError(f"CLIP 模型加载失败: {str(e)}")  
 
-    def forward(self, images):  
-        self._validate_input(images)  
+    def forward(self, x, text):  
+        self._validate_input(x)  
 
-        # 确保将输入移到主设备  
-        images = images.to(self.device)  
+        # 获取中间特征  
+        visual_features = self._forward_features(x)  # [batch_size, num_patches+1, 1024]  
+        visual_features = visual_features[:, 1:, :]  # 移除 [CLS] 标记  
 
-        x = self.visual_encoder.conv1(images)  
-        x = x.view(x.shape[0], x.shape[1], -1).permute(0, 2, 1)  
+        # 处理文本输入  
+        text_features = self._forward_text(text)  # [batch_size, 768]  
+        
+        # 使用线性层将文本特征转换为与视觉特征的维度相同  
+        text_features = self.text_to_visual(text_features)  # 转换维度到 [batch_size, 1024]  
+        
+        # 确保 text_features 是 [batch_size, 1, 1024]  
+        text_features = text_features.unsqueeze(1)  # 变为 [batch_size, 1, 1024]  
 
-        if hasattr(self, 'vis_proj'):  
-            x = self.vis_proj(x)  
+        # 扩展到每个补丁  
+        text_features = text_features.expand(-1, visual_features.size(1), -1)  # [batch_size, num_patches, embed_dim]  
 
-        x = x / x.norm(dim=-1, keepdim=True)  
-        batch_size = images.shape[0]  
-        text_features_repeated = self.text_features.unsqueeze(0).expand(batch_size, -1, -1).to(self.device)  # 确保在同一设备上  
+        # 结合视觉和文本特征  
+        combined_features = visual_features + text_features  # 确保两者的维度相同  
 
-        attended_features = self.attention(x, text_features_repeated)  
-        # print("attended_features device:", attended_features.device)  
-        # print("self.text_features device:", self.text_features.device)
-        logits = torch.matmul(attended_features, self.text_features.t().to(self.device))
+        batch_size, num_patches, embed_dim = combined_features.size()  
 
-        num_patches = attended_features.shape[1]  
-        grid_size = int(num_patches ** 0.5)  
+        # 计算特征图尺寸  
+        h = w = int(num_patches ** 0.5)  
+        combined_features = combined_features.permute(0, 2, 1).contiguous().view(batch_size, embed_dim, h, w)  # [batch_size, embed_dim, h, w]  
 
-        logits = logits.permute(0, 2, 1).view(batch_size, -1, grid_size, grid_size)  
-        logits = F.interpolate(logits, size=(self.input_size, self.input_size), mode='bilinear', align_corners=False)  
-        return logits  
-    
+        # 经过卷积层  
+        x = self.final_conv(combined_features)  
+
+        # 如果需要，调整输出尺寸  
+        if x.shape[-2:] != (self.input_size, self.input_size):  
+            x = F.interpolate(  
+                x,  
+                size=(self.input_size, self.input_size),  
+                mode='bilinear',  
+                align_corners=False  
+            )  
+        return x
+
+    def _forward_features(self, x):  
+        """  
+        自定义的特征提取函数，用于获取每个补丁的特征。  
+
+        Args:  
+            x (Tensor): 输入张量，形状为 [batch_size, in_channels, height, width]  
+
+        Returns:  
+            Tensor: 特征张量，形状为 [batch_size, num_patches+1, embed_dim]  
+        """  
+        # Patch Embedding  
+        x = self.visual_encoder.conv1(x)  # [batch_size, embed_dim, grid_size, grid_size]  
+        x = x.reshape(x.shape[0], x.shape[1], -1)  # [batch_size, embed_dim, num_patches]  
+        x = x.permute(0, 2, 1)  # [batch_size, num_patches, embed_dim]  
+
+        # 添加 [CLS] 标记  
+        cls_token = self.visual_encoder.class_embedding.to(x.dtype) + torch.zeros(x.shape[0], 1, x.shape[-1], dtype=x.dtype, device=x.device)  
+        x = torch.cat([cls_token, x], dim=1)  # [batch_size, num_patches+1, embed_dim]  
+
+        # 添加位置嵌入  
+        x = x + self.visual_encoder.positional_embedding.to(x.dtype)  
+
+        x = self.visual_encoder.ln_pre(x)  
+
+        # 转置为 Transformer 的输入格式 [seq_len, batch_size, embed_dim]  
+        x = x.permute(1, 0, 2)  # [num_patches+1, batch_size, embed_dim]  
+
+        # 通过 Transformer 模块  
+        x = self.visual_encoder.transformer(x)  
+
+        # 转置回 [batch_size, num_patches+1, embed_dim]  
+        x = x.permute(1, 0, 2)  # [batch_size, num_patches+1, embed_dim]  
+
+        return x  
+
+    def _forward_text(self, text):  
+        """  
+        自定义的文本特征提取函数，用于获取文本的特征。  
+
+        Args:  
+            text (List[str]): 文本输入的列表  
+
+        Returns:  
+            Tensor: 文本特征张量，形状为 [batch_size, embed_dim]  
+        """  
+        text_tokens = open_clip.tokenize(text).to(next(self.visual_encoder.parameters()).device)  # Tokenize the text  
+        text_features = self.text_encoder.encode_text(text_tokens)  # 使用文本编码器获取文本特征  
+
+        return text_features    # [batch_size, embed_dim]  
+
     def _validate_input(self, x):  
+        """  
+        验证输入数据。  
+        """  
         if x.dim() != 4:  
-            raise ValueError(f"输入张量的维度应为 4，而不是 {x.dim()} 维。")  
+            raise ValueError(f"输入应为 4 维张量，实际维度为 {x.dim()}")  
         if x.shape[1] != 4:  
-            raise ValueError(f"输入张量的通道数应为 4，而不是 {x.shape[1]}。")  
+            raise ValueError(f"期望 4 个通道，实际获得 {x.shape[1]} 个通道")  
+        if x.shape[2] != self.input_size or x.shape[3] != self.input_size:  
+            raise ValueError(  
+                f"期望输入尺寸为 {self.input_size}x{self.input_size}，"  
+                f"实际获得 {x.shape[2]}x{x.shape[3]}"  
+            )
+        
+# 初始化模型  
+model = CLIPVITSegmentation(model_name='ViT-L-14', num_classes=9, input_size=224)  
 
-# # 示例用法  
-# if __name__ == "__main__":  
-#     logging.basicConfig(level=logging.INFO)  # 设置日志级别  
-#     class_names = [  
-#         'background',  
-#         'wheat',  
-#         'corn',  
-#         'sunflower',  
-#         'watermelon',  
-#         'tomato',  
-#         'sugar beet',  
-#         'green onion',  
-#         'zucchini'  
-#     ]  
+# 创建虚拟输入  
+dummy_input = torch.randn(1, 4, 224, 224)  # 批大小为 1，4 通道，224x224 的输入  
+dummy_text = ["background corn"]  # 示例文本输入  
 
-#     # 确保将模型存放在一个设备上  
-#     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')  
-#     model_name = 'ViT-B-32'  
-#     model = CLIPVITSegmentation(model_name, class_names).to(device)  
-    
-#     # 确保模型使用 DataParallel  
-#     model = nn.DataParallel(model, device_ids=[0, 1])  
+# 进行推理  
+output = model(dummy_input, dummy_text)  
 
-#     # 创建示例输入并确保在同一个设备上  
-#     dummy_images = torch.randn(32, 4, 224, 224).to(device)  
-#     output = model(dummy_images)  
-
-#     print("输出尺寸：", output.shape)  # 应为 [32, num_classes, 224, 224]
+# 打印输出形状  
+print("输出形状：", output.shape)  
