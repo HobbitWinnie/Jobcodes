@@ -1,3 +1,6 @@
+import sys
+sys.path.append('/home/nw/Codes/RemoteCLIP/Image_segementation')  
+
 import torch  
 import torch.optim as optim  
 import logging  
@@ -10,7 +13,7 @@ from torch.optim.lr_scheduler import CosineAnnealingWarmRestarts
 from pathlib import Path  
 from datetime import datetime  
 from torch.cuda.amp import GradScaler, autocast  
-from dataset import create_dataloaders  
+from data.dataset import create_dataloaders  
 from seg_RN50_model import CLIPSegmentation  
 from config import get_config  
 from combined_loss import CombinedLoss  
