@@ -1,2 +1,0 @@
-2024-12-17 16:45:00,590 - INFO - Loading pretrained ViT-L-14 from OpenAI.
-2024-12-17 16:46:43,422 - ERROR - 程序出错: Expected all tensors to be on the same device, but found at least two devices, cpu and cuda:0! (when checking argument for argument index in method wrapper_CUDA__index_select)

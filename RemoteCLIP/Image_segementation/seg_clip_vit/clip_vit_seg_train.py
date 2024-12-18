@@ -45,7 +45,7 @@ def init_training(config):
     model = CLIPVITSegmentation(
         model_name='ViT-L-14',  # 指定使用 ViT-L-14 模型
         class_names = class_names,
-        ckpt_path=config['paths']['model']['clip_ckpt'],  # 如果有预训练权重，可在此指定
+        ckpt_path='/home/nw/Assets/RemoteCLIP/ckpt/RemoteCLIP-ViT-L-14.pt',  # 如果有预训练权重，可在此指定
         input_size=config['dataset']['patch_size'],  # 输入图像大小，应与 ViT-L-14 模型匹配
         freeze_clip=False  # 解冻 CLIP 模型参数
     ).to(device)
