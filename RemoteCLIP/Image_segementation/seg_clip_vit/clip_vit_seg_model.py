@@ -2,9 +2,10 @@ import torch
 import torch.nn as nn  
 import torch.nn.functional as F  
 import open_clip  
+import traceback  
 
 class CLIPVITSegmentation(nn.Module):  
-    def __init__(self, model_name, ckpt_path=None, num_classes=9, input_size=224, freeze_clip=True):  
+    def __init__(self, model_name, ckpt_path=None, num_classes=9, input_size=224, freeze_clip=False):  
         """  
         使用 ViT-L-14 的 CLIP 模型进行分割任务，支持 4 通道输入。  
 
@@ -38,12 +39,32 @@ class CLIPVITSegmentation(nn.Module):
             device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')  
             model, _, _ = open_clip.create_model_and_transforms(model_name, pretrained='openai')  
 
+            if model is None or model.visual is None:  
+                raise RuntimeError("CLIP model or visual encoder not correctly instantiated.")  
+
             # 用于提取文本和视觉编码器  
             self.visual_encoder = model.visual  
+            self.text_encoder = model  
+
+            # 打印 visual_encoder 的结构以确认  
+            print("Visual Encoder Structure:", self.visual_encoder)  
+            
+            # 检查是否有参数  
+            try:  
+                # 用 this to check if parameters are available  
+                if next(self.visual_encoder.parameters()) is None:  
+                    raise RuntimeError("No parameters found in visual encoder.")  
+            except StopIteration:  
+                raise RuntimeError("Visual encoder has no parameters.")  
             
             # 添加调试信息  
             if self.visual_encoder is None:  
                 raise RuntimeError("Visual encoder not initialized.")  
+            try:  
+                example_param = next(self.visual_encoder.parameters())  
+                print(f"Example parameter: {example_param.size()}")  # 打印第一个参数的大小  
+            except StopIteration:  
+                raise RuntimeError("Visual encoder has no parameters.")  
 
             self.text_encoder = model  # 这里将 self.text_encoder 指向整个模型  
             
@@ -51,15 +72,15 @@ class CLIPVITSegmentation(nn.Module):
             # self.text_encoder.eval()  
 
             # 修改输入层支持 4 通道  
-            original_conv1 = self.visual_encoder.conv1  
-            self.visual_encoder.conv1 = nn.Conv2d(  
-                in_channels=4,  # 修改为 4 通道  
-                out_channels=original_conv1.out_channels,  
-                kernel_size=original_conv1.kernel_size,  
-                stride=original_conv1.stride,  
-                padding=original_conv1.padding,  
-                bias=original_conv1.bias  
-            )  
+            # original_conv1 = self.visual_encoder.conv1  
+            # self.visual_encoder.conv1 = nn.Conv2d(  
+            #     in_channels=4,  # 修改为 4 通道  
+            #     out_channels=original_conv1.out_channels,  
+            #     kernel_size=original_conv1.kernel_size,  
+            #     stride=original_conv1.stride,  
+            #     padding=original_conv1.padding,  
+            #     bias=original_conv1.bias  
+            # )  
 
             # 初始化新通道的权重  
             with torch.no_grad():  
@@ -86,6 +107,14 @@ class CLIPVITSegmentation(nn.Module):
 
     def forward(self, x, text):  
         self._validate_input(x)  
+
+        print(f"Visual Encoder Initialized: {self.visual_encoder is not None}")  
+        if self.visual_encoder is not None:  
+            try:  
+                params = list(self.visual_encoder.parameters())  
+                print(f"Number of parameters in visual encoder: {len(params)}")  
+            except Exception as e:  
+                print(f"Error checking parameters: {str(e)}")  
 
         # 获取中间特征  
         visual_features = self._forward_features(x)  # [batch_size, num_patches+1, 1024]  
@@ -161,21 +190,32 @@ class CLIPVITSegmentation(nn.Module):
         return x  
 
     def _forward_text(self, text):  
-        """  
-        自定义的文本特征提取函数，用于获取文本的特征。  
-        """  
-        # 确保 text 是有效的列表  
-        if not isinstance(text, list) or len(text) == 0:  
-            raise ValueError("Input text must be a non-empty list of strings.")  
-    
         if self.visual_encoder is None:  
-            raise RuntimeError("Visual encoder is not set.")  
+            raise RuntimeError("Visual encoder is not initialized.")  
         
-        # 只调用一次 tokenization  
-        text_tokens = open_clip.tokenize(text).to(next(self.visual_encoder.parameters()).device)  
-        text_features = self.text_encoder.encode_text(text_tokens)  # 使用文本编码器获取文本特征  
+        # 调试打印以检查 parameters  
+        try:  
+            device = next(self.visual_encoder.parameters()).device  
+            print(f"Using device: {device}")  
+        except StopIteration:  
+            raise RuntimeError("No parameters found in visual encoder. Check initialization.")  
+        
+        try:  
+            if not isinstance(text, list) or len(text) == 0:  
+                raise ValueError("Input text must be a non-empty list of strings.")  
+            
+            text_tokens = open_clip.tokenize(text)  
+            if text_tokens is None:  
+                raise ValueError("Tokenization failed, received None.")  
 
-        return text_features
+            text_tokens = text_tokens.to(next(self.visual_encoder.parameters()).device)  
+            text_features = self.text_encoder.encode_text(text_tokens)  
+            return text_features  
+        
+        except Exception as e:  
+            print(f"Error during text processing: {str(e)}")  
+            traceback.print_exc()  # 打印堆栈信息以获得更多调试信息  
+            raise
 
     def _validate_input(self, x):  
         """  
