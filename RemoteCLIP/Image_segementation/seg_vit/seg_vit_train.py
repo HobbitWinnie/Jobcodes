@@ -31,7 +31,7 @@ def init_training(config):
         logging.info(f"当前GPU内存使用: {torch.cuda.memory_allocated(0) / 1024 ** 2:.2f}MB")
 
     timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-    exp_dir = Path(config['paths']['model']['save_dir']) / timestamp
+    exp_dir = Path(__file__).parent/'model_save'/ timestamp
     exp_dir.mkdir(parents=True, exist_ok=True)
     
     setup_logging(exp_dir / 'training.log')

@@ -40,14 +40,25 @@ def init_training(config):
     with open(exp_dir / 'config.json', 'w') as f:
         json.dump(config.config, f, indent=4)
 
+    # 定义英文的类别名称  
+    class_names = [  
+        'background',  
+        'wheat',  
+        'corn',  
+        'sunflower',  
+        'watermelon',  
+        'tomato',  
+        'sugar beet',  
+        'green onion',  
+        'zucchini'  
+    ] 
+
     # 初始化模型
-    class_names = ['背景', '小麦', '玉米', '向日葵', '西瓜', '西红柿', '甜菜', '葱', '西葫芦']  
     model = CLIPVITSegmentation(
         model_name='ViT-L-14',  # 指定使用 ViT-L-14 模型
         class_names = class_names,
         ckpt_path='/home/nw/Assets/RemoteCLIP/ckpt/RemoteCLIP-ViT-L-14.pt',  # 如果有预训练权重，可在此指定
         input_size=config['dataset']['patch_size'],  # 输入图像大小，应与 ViT-L-14 模型匹配
-        freeze_clip=False  # 解冻 CLIP 模型参数
     ).to(device)
     logging.info("模型初始化完成")  
 
