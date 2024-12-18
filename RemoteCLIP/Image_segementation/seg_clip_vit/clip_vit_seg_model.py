@@ -40,6 +40,11 @@ class CLIPVITSegmentation(nn.Module):
 
             # 用于提取文本和视觉编码器  
             self.visual_encoder = model.visual  
+            
+            # 添加调试信息  
+            if self.visual_encoder is None:  
+                raise RuntimeError("Visual encoder not initialized.")  
+
             self.text_encoder = model  # 这里将 self.text_encoder 指向整个模型  
             
             self.visual_encoder.eval()  
@@ -158,17 +163,19 @@ class CLIPVITSegmentation(nn.Module):
     def _forward_text(self, text):  
         """  
         自定义的文本特征提取函数，用于获取文本的特征。  
-
-        Args:  
-            text (List[str]): 文本输入的列表  
-
-        Returns:  
-            Tensor: 文本特征张量，形状为 [batch_size, embed_dim]  
         """  
-        text_tokens = open_clip.tokenize(text).to(next(self.visual_encoder.parameters()).device)  # Tokenize the text  
+        # 确保 text 是有效的列表  
+        if not isinstance(text, list) or len(text) == 0:  
+            raise ValueError("Input text must be a non-empty list of strings.")  
+    
+        if self.visual_encoder is None:  
+            raise RuntimeError("Visual encoder is not set.")  
+        
+        # 只调用一次 tokenization  
+        text_tokens = open_clip.tokenize(text).to(next(self.visual_encoder.parameters()).device)  
         text_features = self.text_encoder.encode_text(text_tokens)  # 使用文本编码器获取文本特征  
 
-        return text_features    # [batch_size, embed_dim]  
+        return text_features
 
     def _validate_input(self, x):  
         """  
@@ -184,15 +191,15 @@ class CLIPVITSegmentation(nn.Module):
                 f"实际获得 {x.shape[2]}x{x.shape[3]}"  
             )
         
-# 初始化模型  
-model = CLIPVITSegmentation(model_name='ViT-L-14', num_classes=9, input_size=224)  
+# # 初始化模型  
+# model = CLIPVITSegmentation(model_name='ViT-L-14', num_classes=9, input_size=224)  
 
-# 创建虚拟输入  
-dummy_input = torch.randn(1, 4, 224, 224)  # 批大小为 1，4 通道，224x224 的输入  
-dummy_text = ["background corn"]  # 示例文本输入  
+# # 创建虚拟输入  
+# dummy_input = torch.randn(1, 4, 224, 224)  # 批大小为 1，4 通道，224x224 的输入  
+# dummy_text = ["background corn"]  # 示例文本输入  
 
-# 进行推理  
-output = model(dummy_input, dummy_text)  
+# # 进行推理  
+# output = model(dummy_input, dummy_text)  
 
-# 打印输出形状  
-print("输出形状：", output.shape)  
+# # 打印输出形状  
+# print("输出形状：", output.shape)  

@@ -133,7 +133,7 @@ def validate_labels(labels: torch.Tensor, num_classes: int = 9) -> None:
         raise ValueError(f"标签值应在 [0, {num_classes-1}] 范围内，但得到的范围是 [{min_label}, {max_label}]")  
     
 
-def create_dataloaders(image_dir, labels_dir, batch_size, train_ratio=0.8, num_workers=4):  
+def create_dataloaders(image_dir, labels_dir, batch_size, train_ratio=0.8, num_workers=0):  
     """创建训练和验证数据加载器（单GPU版本）"""  
     # 创建数据集  
     dataset = RemoteSensingDataset(  

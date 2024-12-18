@@ -110,7 +110,7 @@ def validate_model(model, val_loader, criterion, device, num_classes):
 
     with torch.no_grad():
         for batch in val_loader:
-            images, masks, text = batch[0].to(device), batch[1].to(device), batch[2].to(device)
+            images, masks, text = batch[0].to(device), batch[1].to(device), batch[2]
 
             with autocast():
                 outputs = model(images, text)
@@ -216,7 +216,8 @@ def train_loop(model, train_loader, val_loader, criterion, optimizer, scheduler,
             current_lr = optimizer.param_groups[0]['lr']
 
             for batch in train_loader:
-                images, masks, text = batch[0].to(device), batch[1].to(device), batch[2].to(device)
+                images, masks, text = batch[0].to(device), batch[1].to(device), batch[2]
+                print(f'Batch size: {images.size()}, Text examples: {text[:3]}')  # 输出图片批次大小和文本示例  
 
                 optimizer.zero_grad(set_to_none=True)
 
