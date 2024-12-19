@@ -17,6 +17,9 @@ class CLIPVITSegmentation(nn.Module):
             freeze_clip (bool): 是否冻结 CLIP 模型的权重  
         """  
         super(CLIPVITSegmentation, self).__init__()  
+        
+        # 确定设备  
+        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')        
         self.input_size = input_size  
 
         # 初始化 CLIP 模型  
@@ -27,60 +30,38 @@ class CLIPVITSegmentation(nn.Module):
             in_channels=self.visual_encoder.transformer.width,  # ViT 模型的嵌入维度  
             out_channels=num_classes,  
             kernel_size=1  
-        )  
+        ).to(self.device)  
 
-        self.text_to_visual = nn.Linear(768, 1024)  # 768到1024的线性变换  
+        self.text_to_visual = nn.Linear(768, 1024).to(self.device)  # 768到1024的线性变换  
 
     def _init_clip_model(self, model_name, ckpt_path=None, freeze_clip=False):  
         """  
         初始化 CLIP 模型，并修改输入层支持 4 通道数据。  
         """  
         try:  
-            device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')  
             model, _, _ = open_clip.create_model_and_transforms(model_name, pretrained='openai')  
-
             if model is None or model.visual is None:  
                 raise RuntimeError("CLIP model or visual encoder not correctly instantiated.")  
 
             # 用于提取文本和视觉编码器  
-            self.visual_encoder = model.visual  
-            self.text_encoder = model  
-
-            # 打印 visual_encoder 的结构以确认  
-            print("Visual Encoder Structure:", self.visual_encoder)  
-            
-            # 检查是否有参数  
-            try:  
-                # 用 this to check if parameters are available  
-                if next(self.visual_encoder.parameters()) is None:  
-                    raise RuntimeError("No parameters found in visual encoder.")  
-            except StopIteration:  
-                raise RuntimeError("Visual encoder has no parameters.")  
-            
-            # 添加调试信息  
-            if self.visual_encoder is None:  
-                raise RuntimeError("Visual encoder not initialized.")  
-            try:  
-                example_param = next(self.visual_encoder.parameters())  
-                print(f"Example parameter: {example_param.size()}")  # 打印第一个参数的大小  
-            except StopIteration:  
-                raise RuntimeError("Visual encoder has no parameters.")  
-
-            self.text_encoder = model  # 这里将 self.text_encoder 指向整个模型  
-            
+            self.visual_encoder = model.visual.to(self.device)  
             self.visual_encoder.eval()  
-            # self.text_encoder.eval()  
+
+            self.text_encoder = model.encode_text  # 提取文本编码器            
+
+            # 初始化 tokenizer  
+            self.tokenizer = open_clip.get_tokenizer(model_name)  
 
             # 修改输入层支持 4 通道  
-            # original_conv1 = self.visual_encoder.conv1  
-            # self.visual_encoder.conv1 = nn.Conv2d(  
-            #     in_channels=4,  # 修改为 4 通道  
-            #     out_channels=original_conv1.out_channels,  
-            #     kernel_size=original_conv1.kernel_size,  
-            #     stride=original_conv1.stride,  
-            #     padding=original_conv1.padding,  
-            #     bias=original_conv1.bias  
-            # )  
+            original_conv1 = self.visual_encoder.conv1  
+            self.visual_encoder.conv1 = nn.Conv2d(  
+                in_channels=4,  # 修改为 4 通道  
+                out_channels=original_conv1.out_channels,  
+                kernel_size=original_conv1.kernel_size,  
+                stride=original_conv1.stride,  
+                padding=original_conv1.padding,  
+                bias=original_conv1.bias  
+            ).to(self.device)  
 
             # 初始化新通道的权重  
             with torch.no_grad():  
@@ -92,11 +73,9 @@ class CLIPVITSegmentation(nn.Module):
             if freeze_clip:  
                 for param in self.visual_encoder.parameters():  
                     param.requires_grad = False  
-                # for param in self.text_encoder.parameters():  
-                #     param.requires_grad = False  
             
             if ckpt_path:  # 如果提供了检查点路径，则加载自定义权重  
-                ckpt = torch.load(ckpt_path, map_location=device)  
+                ckpt = torch.load(ckpt_path, map_location=self.device)  
                 if isinstance(ckpt, dict) and 'state_dict' in ckpt:  
                     ckpt = ckpt['state_dict']  
                 self.load_state_dict(ckpt, strict=False)  
@@ -106,45 +85,47 @@ class CLIPVITSegmentation(nn.Module):
             raise RuntimeError(f"CLIP 模型加载失败: {str(e)}")  
 
     def forward(self, x, text):  
+        # 设备和输入验证  
+        x = x.to(self.device)  
         self._validate_input(x)  
 
-        print(f"Visual Encoder Initialized: {self.visual_encoder is not None}")  
-        if self.visual_encoder is not None:  
-            try:  
-                params = list(self.visual_encoder.parameters())  
-                print(f"Number of parameters in visual encoder: {len(params)}")  
-            except Exception as e:  
-                print(f"Error checking parameters: {str(e)}")  
+        # 特征提取  
+        visual_features = self._forward_features(x)[:, 1:, :]  # 移除 [CLS] 标记  
 
-        # 获取中间特征  
-        visual_features = self._forward_features(x)  # [batch_size, num_patches+1, 1024]  
-        visual_features = visual_features[:, 1:, :]  # 移除 [CLS] 标记  
-
-        # 处理文本输入  
-        text_features = self._forward_text(text)  # [batch_size, 768]  
+        # 确保文本数量与批次大小一致  
+        batch_size = x.size(0)  
+        if len(text) != batch_size:  
+            raise ValueError(  
+                f"文本数量 ({len(text)}) 必须与图像批次大小 ({batch_size}) 完全匹配。"  
+                "请确保每个图像都有对应的文本描述。"  
+            )
         
-        # 使用线性层将文本特征转换为与视觉特征的维度相同  
-        text_features = self.text_to_visual(text_features)  # 转换维度到 [batch_size, 1024]  
-        
-        # 确保 text_features 是 [batch_size, 1, 1024]  
-        text_features = text_features.unsqueeze(1)  # 变为 [batch_size, 1, 1024]  
+        # 特殊处理：确保 text 在每个 GPU 上都有相同的文本  
+        if isinstance(self, nn.DataParallel):  
+            # 如果是 DataParallel 模式，确保每个 GPU 分片获得完整的文本  
+            text = text * (self.device.index + 1)  
+            text = text[:batch_size]  
 
-        # 扩展到每个补丁  
-        text_features = text_features.expand(-1, visual_features.size(1), -1)  # [batch_size, num_patches, embed_dim]  
+        # 文本特征处理  
+        text_features = self._forward_text(text)  
+        text_features = self.text_to_visual(text_features)  
 
-        # 结合视觉和文本特征  
-        combined_features = visual_features + text_features  # 确保两者的维度相同  
+        # 动态获取维度信息  
+        num_patches = visual_features.size(1)  
+        embed_dim = visual_features.size(2)  
 
-        batch_size, num_patches, embed_dim = combined_features.size()  
+        # 文本特征调整  
+        text_features = text_features.view(batch_size, 1, embed_dim).expand(-1, num_patches, -1)  
 
-        # 计算特征图尺寸  
+        # 特征融合  
+        combined_features = visual_features + text_features  
         h = w = int(num_patches ** 0.5)  
-        combined_features = combined_features.permute(0, 2, 1).contiguous().view(batch_size, embed_dim, h, w)  # [batch_size, embed_dim, h, w]  
+        combined_features = combined_features.permute(0, 2, 1).contiguous().view(batch_size, embed_dim, h, w)  
 
-        # 经过卷积层  
+        # 分割头  
         x = self.final_conv(combined_features)  
 
-        # 如果需要，调整输出尺寸  
+        # 尺寸调整  
         if x.shape[-2:] != (self.input_size, self.input_size):  
             x = F.interpolate(  
                 x,  
@@ -152,7 +133,7 @@ class CLIPVITSegmentation(nn.Module):
                 mode='bilinear',  
                 align_corners=False  
             )  
-        return x
+        return x  
 
     def _forward_features(self, x):  
         """  
@@ -170,11 +151,11 @@ class CLIPVITSegmentation(nn.Module):
         x = x.permute(0, 2, 1)  # [batch_size, num_patches, embed_dim]  
 
         # 添加 [CLS] 标记  
-        cls_token = self.visual_encoder.class_embedding.to(x.dtype) + torch.zeros(x.shape[0], 1, x.shape[-1], dtype=x.dtype, device=x.device)  
+        cls_token = self.visual_encoder.class_embedding.to(x.dtype).to(self.device) + torch.zeros(x.shape[0], 1, x.shape[-1], dtype=x.dtype, device=self.device)  
         x = torch.cat([cls_token, x], dim=1)  # [batch_size, num_patches+1, embed_dim]  
 
         # 添加位置嵌入  
-        x = x + self.visual_encoder.positional_embedding.to(x.dtype)  
+        x = x + self.visual_encoder.positional_embedding.to(x.dtype).to(self.device)  
 
         x = self.visual_encoder.ln_pre(x)  
 
@@ -192,30 +173,20 @@ class CLIPVITSegmentation(nn.Module):
     def _forward_text(self, text):  
         if self.visual_encoder is None:  
             raise RuntimeError("Visual encoder is not initialized.")  
-        
-        # 调试打印以检查 parameters  
-        try:  
-            device = next(self.visual_encoder.parameters()).device  
-            print(f"Using device: {device}")  
-        except StopIteration:  
-            raise RuntimeError("No parameters found in visual encoder. Check initialization.")  
-        
         try:  
             if not isinstance(text, list) or len(text) == 0:  
-                raise ValueError("Input text must be a non-empty list of strings.")  
+                raise ValueError("输入文本必须是非空字符串列表。")  
             
-            text_tokens = open_clip.tokenize(text)  
-            if text_tokens is None:  
-                raise ValueError("Tokenization failed, received None.")  
+            text_tokens = self.tokenizer(text)  # 使用 tokenizer 获取文本 tokens  
 
-            text_tokens = text_tokens.to(next(self.visual_encoder.parameters()).device)  
-            text_features = self.text_encoder.encode_text(text_tokens)  
+            text_features = self.text_encoder(text_tokens).to(self.device)   
+
             return text_features  
         
         except Exception as e:  
-            print(f"Error during text processing: {str(e)}")  
-            traceback.print_exc()  # 打印堆栈信息以获得更多调试信息  
-            raise
+            print(f"文本处理错误: {str(e)}")  
+            traceback.print_exc()  
+            raise  
 
     def _validate_input(self, x):  
         """  
@@ -230,7 +201,9 @@ class CLIPVITSegmentation(nn.Module):
                 f"期望输入尺寸为 {self.input_size}x{self.input_size}，"  
                 f"实际获得 {x.shape[2]}x{x.shape[3]}"  
             )
-        
+
+
+
 # # 初始化模型  
 # model = CLIPVITSegmentation(model_name='ViT-L-14', num_classes=9, input_size=224)  
 
@@ -242,4 +215,4 @@ class CLIPVITSegmentation(nn.Module):
 # output = model(dummy_input, dummy_text)  
 
 # # 打印输出形状  
-# print("输出形状：", output.shape)  
+# print("输出形状：", output)  

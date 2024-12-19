@@ -60,7 +60,7 @@ def init_training(config):
         ckpt_path='/home/nw/Assets/RemoteCLIP/ckpt/RemoteCLIP-ViT-L-14.pt',  # 如果有预训练权重，可在此指定
         input_size=config['dataset']['patch_size'],  # 输入图像大小，应与 ViT-L-14 模型匹配
         freeze_clip=False
-    ).to(device)
+    ).to(device=device)
     logging.info("模型初始化完成")  
 
     # 初始化优化器  
@@ -217,8 +217,7 @@ def train_loop(model, train_loader, val_loader, criterion, optimizer, scheduler,
 
             for batch in train_loader:
                 images, masks, text = batch[0].to(device), batch[1].to(device), batch[2]
-                print(f'Batch size: {images.size()}, Text examples: {text[:3]}')  # 输出图片批次大小和文本示例  
-
+                # print(f'Batch size: {images.size()}, Text examples: {text[:3]}')  # 输出图片批次大小和文本示例  
                 optimizer.zero_grad(set_to_none=True)
 
                 with autocast():
@@ -308,9 +307,9 @@ def main():
             num_workers=config['dataset']['num_workers'],
        )
 
-        if torch.cuda.device_count() > 1:
-            model = nn.DataParallel(model)
-            logging.info(f"使用 {torch.cuda.device_count()} 个GPU训练")
+        # if torch.cuda.device_count() > 1:
+        #     model = nn.DataParallel(model)
+        #     logging.info(f"使用 {torch.cuda.device_count()} 个GPU训练")
 
         best_miou, metrics_history = train_loop(
             model, train_loader, val_loader, criterion,

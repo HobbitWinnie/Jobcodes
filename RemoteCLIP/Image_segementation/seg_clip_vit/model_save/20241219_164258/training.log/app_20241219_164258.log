@@ -1,0 +1,5 @@
+2024-12-19 16:42:58,005 - INFO - Loading pretrained ViT-L-14 from OpenAI.
+2024-12-19 16:43:05,394 - INFO - 模型初始化完成
+2024-12-19 16:43:05,395 - INFO - 优化器: AdamW, 初始学习率: 1e-05
+2024-12-19 16:43:05,396 - INFO - 学习率调度器: CosineAnnealingWarmRestarts
+2024-12-19 16:43:05,403 - INFO - 开始训练 - 总轮次: 20000
