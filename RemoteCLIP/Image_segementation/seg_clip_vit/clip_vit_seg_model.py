@@ -201,18 +201,4 @@ class CLIPVITSegmentation(nn.Module):
                 f"期望输入尺寸为 {self.input_size}x{self.input_size}，"  
                 f"实际获得 {x.shape[2]}x{x.shape[3]}"  
             )
-
-
-
-# # 初始化模型  
-# model = CLIPVITSegmentation(model_name='ViT-L-14', num_classes=9, input_size=224)  
-
-# # 创建虚拟输入  
-# dummy_input = torch.randn(1, 4, 224, 224)  # 批大小为 1，4 通道，224x224 的输入  
-# dummy_text = ["background corn"]  # 示例文本输入  
-
-# # 进行推理  
-# output = model(dummy_input, dummy_text)  
-
-# # 打印输出形状  
-# print("输出形状：", output)  
+        
