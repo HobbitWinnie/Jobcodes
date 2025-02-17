@@ -1,5 +1,5 @@
 import sys
-sys.path.append('/home/nw/Codes/RemoteCLIP/Image_segementation')  
+sys.path.append('/home/nw/Codes/Methods/RemoteCLIP/Image_segementation')  
 
 import torch  
 import torch.optim as optim  
@@ -8,7 +8,6 @@ import time
 import numpy as np  
 import json  
 import torch.nn as nn  
-import gc  
 from torch.optim.lr_scheduler import CosineAnnealingWarmRestarts  
 from pathlib import Path  
 from datetime import datetime  

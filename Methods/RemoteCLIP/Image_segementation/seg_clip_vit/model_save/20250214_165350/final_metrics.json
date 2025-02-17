@@ -1,0 +1,14 @@
+{
+    "best_miou": -Infinity,
+    "metrics_history": {
+        "train_loss": [],
+        "train_focal_loss": [],
+        "train_dice_loss": [],
+        "val_loss": [],
+        "val_focal_loss": [],
+        "val_dice_loss": [],
+        "val_miou": [],
+        "val_accuracy": [],
+        "learning_rate": []
+    }
+}

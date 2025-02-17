@@ -1,0 +1,33 @@
+2025-02-14 16:53:01,649 - INFO - CUDA版本: 12.1
+2025-02-14 16:53:01,721 - INFO - 可用GPU: NVIDIA A40
+2025-02-14 16:53:01,722 - INFO - 当前GPU内存使用: 0.00MB
+2025-02-14 16:53:01,722 - INFO - Loading pretrained ViT-L-14 from OpenAI.
+2025-02-14 16:53:10,379 - INFO - 模型初始化完成
+2025-02-14 16:53:10,381 - INFO - 优化器: AdamW, 初始学习率: 1e-05
+2025-02-14 16:53:10,381 - INFO - 学习率调度器: CosineAnnealingWarmRestarts
+2025-02-14 16:53:10,388 - INFO - 使用 4 个GPU训练
+2025-02-14 16:53:10,388 - INFO - 开始训练 - 总轮次: 20000
+2025-02-14 16:53:16,256 - ERROR - 训练出错: Caught ValueError in replica 0 on device 0.
+Original Traceback (most recent call last):
+  File "/home/nw/.conda/envs/pytorch/lib/python3.9/site-packages/torch/nn/parallel/parallel_apply.py", line 83, in _worker
+    output = module(*input, **kwargs)
+  File "/home/nw/.conda/envs/pytorch/lib/python3.9/site-packages/torch/nn/modules/module.py", line 1511, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+  File "/home/nw/.conda/envs/pytorch/lib/python3.9/site-packages/torch/nn/modules/module.py", line 1520, in _call_impl
+    return forward_call(*args, **kwargs)
+  File "/home/nw/Codes/Methods/RemoteCLIP/Image_segementation/seg_clip_vit/clip_vit_seg_model.py", line 98, in forward
+    raise ValueError(
+ValueError: 文本数量 (96) 必须与图像批次大小 (24) 完全匹配。请确保每个图像都有对应的文本描述。
+
+2025-02-14 16:53:16,257 - ERROR - 程序出错: Caught ValueError in replica 0 on device 0.
+Original Traceback (most recent call last):
+  File "/home/nw/.conda/envs/pytorch/lib/python3.9/site-packages/torch/nn/parallel/parallel_apply.py", line 83, in _worker
+    output = module(*input, **kwargs)
+  File "/home/nw/.conda/envs/pytorch/lib/python3.9/site-packages/torch/nn/modules/module.py", line 1511, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+  File "/home/nw/.conda/envs/pytorch/lib/python3.9/site-packages/torch/nn/modules/module.py", line 1520, in _call_impl
+    return forward_call(*args, **kwargs)
+  File "/home/nw/Codes/Methods/RemoteCLIP/Image_segementation/seg_clip_vit/clip_vit_seg_model.py", line 98, in forward
+    raise ValueError(
+ValueError: 文本数量 (96) 必须与图像批次大小 (24) 完全匹配。请确保每个图像都有对应的文本描述。
+

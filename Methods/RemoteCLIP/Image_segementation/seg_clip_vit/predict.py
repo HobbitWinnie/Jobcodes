@@ -11,7 +11,7 @@ import torch.nn.functional as F
 from torch.cuda.amp import autocast
 from tqdm import tqdm
 from pathlib import Path
-from clip_vit_seg_model import UNetWithCLIP
+from clip_vit_seg_model import CLIPVITSegmentation
 from config import get_config
 from ..data.data_preparation import load_and_save_data
 from ..data.dataset import split_image_into_patches, reconstruct_image_from_patches, CustomTransform
@@ -21,7 +21,7 @@ from utils import setup_logging
 def load_model(config, checkpoint_path, device):
     """加载训练好的模型"""
     num_classes = config['dataset']['num_classes']
-    model = UNetWithCLIP(
+    model = CLIPVITSegmentation(
         model_name=config['model']['model_name'],
         ckpt_path=config['paths']['model']['clip_ckpt'],
         num_classes=num_classes,

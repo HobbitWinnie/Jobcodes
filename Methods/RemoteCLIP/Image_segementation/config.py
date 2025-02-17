@@ -18,7 +18,7 @@ class Config:
                     'label_dir': '/home/Dataset/nw/Segmentation/CpeosTest/train_4channel/labels'
                 },  
                 'model': {  
-                    'save_dir': '/home/nw/Codes/RemoteCLIP/Image_segementation/model_save',  
+                    'save_dir': '/home/nw/Codes/Methods/RemoteCLIP/Image_segementation/model_save',  
                     'best_model': '/home/nw/Codes/RemoteCLIP/Image_segementation/model_save/20241203_101655/best_model.pth',  
                     'clip_ckpt': '/home/nw/Assets/RemoteCLIP/ckpt/RemoteCLIP-RN50.pt',  
                 },  

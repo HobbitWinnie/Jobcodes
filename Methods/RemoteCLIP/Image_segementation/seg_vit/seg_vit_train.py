@@ -1,6 +1,6 @@
 
 import sys
-sys.path.append('/home/nw/Codes/RemoteCLIP/Image_segementation')  
+sys.path.append('/home/nw/Codes/Methods/RemoteCLIP/Image_segementation')  
 
 import torch
 import torch.optim as optim
