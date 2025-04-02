@@ -9,23 +9,9 @@ import torch.nn as nn
 from torch.utils.data import DataLoader  
 from sklearn.model_selection import train_test_split  
 from sklearn.metrics import f1_score  
-
-from Loaders.MultiLbel_loader import MultiLabelDataset  
 from Loaders.MLRSNet_loader import MLRSNetDataset
 from Models.CNN_MultiLabel_Classifier.model_factory import create_model
 
-
-def get_dataloaders(image_dir, label_file, preprocess_func, batch_size=192, file_extension='.png'): 
-    # 读取原始 CSV 文件  
-    data = pd.read_csv(label_file)
-    # Create datasets and dataloaders  
-    train_labels, test_labels = train_test_split(data, test_size=0.33, random_state=42)  
-    train_dataset = MultiLabelDataset(image_dir, train_labels, preprocess_func, file_extension=file_extension)  
-    test_dataset = MultiLabelDataset(image_dir, test_labels, preprocess_func, file_extension=file_extension)  
-    train_loader = DataLoader(train_dataset, batch_size=batch_size, num_workers=42, shuffle=True)  
-    test_loader = DataLoader(test_dataset, batch_size=batch_size, num_workers=42, shuffle=True)  
-
-    return train_loader, test_loader  
 
 def load_MLRSNet_data(images_dir, labels_dir):  
     """加载所有图像和标签数据"""  
@@ -49,7 +35,7 @@ def load_MLRSNet_data(images_dir, labels_dir):
     return data  
 
 
-def train_model(model, train_loader, val_loader, num_epochs=10):  
+def train_model(model, train_loader, val_loader, MODEL_SAVE_DIR, num_epochs=10):  
     criterion = nn.BCEWithLogitsLoss()  
     best_f1 = 0  
     model.train()  
@@ -73,7 +59,9 @@ def train_model(model, train_loader, val_loader, num_epochs=10):
         # 验证和保存最佳模型  
         val_f1 = evaluate(model, val_loader)  
         if val_f1 > best_f1:  
-            torch.save(model.state_dict(), "best_model.pth")  
+            model_file_name = 'best_model_epoch_' + str(epoch) +'.pth'
+            save_path = os.path.join(MODEL_SAVE_DIR, model_file_name)
+            torch.save(model.state_dict(), save_path)  
             best_f1 = val_f1  
             
         print(f"Epoch {epoch+1}/{num_epochs} | "  
@@ -106,8 +94,9 @@ if __name__ == "__main__":
     DATASET_DIR = '/home/Dataset/nw/Multilabel-Datasets/MLRSNet_dataset'
     images_dir = os.path.join(DATASET_DIR, 'Images')  
     labels_dir = os.path.join(DATASET_DIR, 'Labels')   
-     
-    # 加载数据  
+    MODEL_SAVE_DIR = '/home/nw/Codes/Jobs/CNN_MultiLabel_Classifier/model_save'
+
+    # 加载数据 
     data = load_MLRSNet_data(images_dir, labels_dir)  
 
     # 划分数据集  
@@ -129,4 +118,5 @@ if __name__ == "__main__":
     test_loader = DataLoader(test_dataset, batch_size=192, num_workers=42, shuffle=True)  
    
     # 训练模型  
-    train_model(model, train_loader, test_loader, num_epochs=100)  
+    os.makedirs(MODEL_SAVE_DIR, exist_ok=True)
+    train_model(model, train_loader, test_loader, MODEL_SAVE_DIR, num_epochs=1000)  
