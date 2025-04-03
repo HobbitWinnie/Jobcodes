@@ -1,3 +1,6 @@
+import sys  
+sys.path.append('/home/nw/Codes')  
+
 import os  
 import torch  
 import torch.nn as nn  
@@ -16,7 +19,7 @@ from utils import (
     multiclass_dice_coefficient  
 )  
 from dataset import create_dataloaders  
-from model import UNet  
+from Models.Unet_Segementation.UNet import UNet  
 
 def validate(model, val_loader, criterion, device):  
     """验证函数"""  

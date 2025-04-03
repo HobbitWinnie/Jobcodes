@@ -1,3 +1,6 @@
+import sys  
+sys.path.append('/home/nw/Codes')  
+
 import os  
 import logging  
 import torch  
@@ -9,7 +12,7 @@ from tqdm import tqdm
 import numpy as np
 
 from config import get_config, setup_logging, setup_device  
-from model import UNet  
+from Models.Unet_Seg.model import UNet  
 from utils import load_and_save_data  
 from dataset import split_image_into_patches, reconstruct_image_from_patches  
 

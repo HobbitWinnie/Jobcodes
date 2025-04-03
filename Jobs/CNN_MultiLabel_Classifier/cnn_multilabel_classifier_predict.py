@@ -1,4 +1,6 @@
-# predict.py  
+import sys  
+sys.path.append('/home/nw/Codes')  
+
 import os  
 import torch  
 import pandas as pd  
@@ -51,7 +53,7 @@ class Predictor:
         return model.to(self.config.device)  
     
     def _create_dataset(self):  
-        """创建预测数据集（复用训练代码的数据处理）"""  
+        """创建预测数据集"""  
         if os.path.isfile(self.config.INPUT_DIR):  
             return [self.config.INPUT_DIR], []  
         
@@ -64,7 +66,7 @@ class Predictor:
     
     def predict(self):  
         """执行预测主流程"""  
-        # 加载数据（复用训练代码的Dataset）  
+        # 加载数据
         image_paths, _ = self._create_dataset()  
         dataset = MLRSNetDataset(  
             [(p, [0]*self.config.NUM_CLASSES) for p in image_paths],  # 假标签填充  
@@ -87,7 +89,7 @@ class Predictor:
                 all_preds.extend((probs > self.config.THRESHOLD).int().tolist())  
         
         # 保存结果（与训练日志格式一致）  
-        results = pd.DataFrame({  
+        results = pd.DataFrame({ 
             'image_path': image_paths,  
             'predictions': all_preds  
         })  

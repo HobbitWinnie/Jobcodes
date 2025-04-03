@@ -2,33 +2,20 @@ import os
 import logging  
 import rasterio  
 import torch  
-import torch.multiprocessing as mp  
-import torch.distributed as dist  
-import torch.optim as optim  
 import torch.nn as nn  
+import torch.optim as optim  
 import numpy as np  
-from torch.utils.data import DataLoader, DistributedSampler  
+from torch.utils.data import DataLoader  
 from sklearn.model_selection import train_test_split  
-from tqdm import tqdm  
-from sklearn.metrics import accuracy_score 
+from sklearn.metrics import accuracy_score  
 
-from data_utils import load_data, sample_dataset, load_dataset, save_dataset, RemoteSensingDataset  
+from nw.Codes.Jobs.Pixel_based_CNN_classifier.dataset import load_data, sample_dataset, load_dataset, save_dataset, RemoteSensingDataset  
 from model_ResNet50 import ResNet50  
-from model_CNN import SimpleCNN
+from model_CNN import SimpleCNN  
 
 # 配置日志  
 logging.basicConfig(level=logging.INFO)  
 
-# 初始化分布式环境  
-def setup(rank, world_size):  
-    os.environ['MASTER_ADDR'] = '127.0.0.1'  
-    os.environ['MASTER_PORT'] = '12355'  
-    dist.init_process_group("nccl", rank=rank, world_size=world_size)  
-
-def cleanup():  
-    dist.destroy_process_group()  
-
-# 数据准备  
 def prepare_data(train_img_path, label_img_path, X_path, y_path):  
     image, labels, nodata_value = load_data(train_img_path, label_img_path)  
     X, y = load_dataset(X_path, y_path)  
@@ -37,25 +24,25 @@ def prepare_data(train_img_path, label_img_path, X_path, y_path):
         save_dataset(X, y, X_path, y_path)  
     return X, y, nodata_value  
 
-# 模型训练  
-def train(rank, world_size, model, train_dataset, val_dataset, save_path, num_epochs=10):  
-    setup(rank, world_size)  
-    device = torch.device(f'cuda:{rank}')  
+def train(model, train_dataset, val_dataset, save_path, num_epochs=10):  
+    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")  
+    
+    # 使用DataParallel包装模型  
+    if torch.cuda.device_count() > 1:  
+        logging.info(f"Using {torch.cuda.device_count()} GPUs!")  
+        model = nn.DataParallel(model)  
     model.to(device)  
-    model = nn.parallel.DistributedDataParallel(model, device_ids=[rank])  
 
     criterion = nn.CrossEntropyLoss()  
     optimizer = optim.Adam(model.parameters(), lr=0.001)  
 
-    train_sampler = DistributedSampler(train_dataset, num_replicas=world_size, rank=rank)  
-    val_sampler = DistributedSampler(val_dataset, num_replicas=world_size, rank=rank, shuffle=False)  
-
-    train_loader = DataLoader(train_dataset, batch_size=64, sampler=train_sampler, num_workers=4)  
-    val_loader = DataLoader(val_dataset, batch_size=64, sampler=val_sampler, num_workers=4)  
+    train_loader = DataLoader(train_dataset, batch_size = 64* torch.cuda.device_count(),   
+                            shuffle=True, num_workers=4)  
+    val_loader = DataLoader(val_dataset, batch_size = 64* torch.cuda.device_count(),  
+                           num_workers=4)  
 
     for epoch in range(num_epochs):  
         model.train()  
-        train_sampler.set_epoch(epoch)  
         running_loss = 0.0  
 
         for inputs, labels in train_loader:  
@@ -79,24 +66,19 @@ def train(rank, world_size, model, train_dataset, val_dataset, save_path, num_ep
                 all_labels.extend(labels.cpu().numpy())  
 
         acc = accuracy_score(all_labels, all_preds)  
-        
-        if rank == 0:  
-            logging.info(f'Epoch {epoch+1}/{num_epochs}, Loss: {running_loss/len(train_loader):.4f}, Validation Accuracy: {acc * 100:.2f}%')  
+        logging.info(f'Epoch {epoch+1}/{num_epochs}, Loss: {running_loss/len(train_loader):.4f}, Val Acc: {acc * 100:.2f}%')  
 
-    if rank == 0:  
-        torch.save(model.state_dict(), save_path)  
-        logging.info(f'Model saved to {save_path}')  
+    torch.save(model.module.state_dict(), save_path)  # 保存原始模型  
+    logging.info(f'Model saved to {save_path}')  
+
+def classify_image(model_path, image_path, output_path, no_data_value, patch_size=7):  
+    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")  
     
-    cleanup()  
-
-# 图像分类  
-def classify_image(rank, world_size, model_path, image_path, output_path, no_data_value, patch_size=7):  
-    setup(rank, world_size)  
-    device = torch.device(f'cuda:{rank}')  
-
-    model = ResNet50(num_classes=10).to(device)  
-    model.load_state_dict(torch.load(model_path, map_location=device))  
-    model = nn.parallel.DistributedDataParallel(model, device_ids=[rank])  
+    model = ResNet50(num_classes=10)  
+    if torch.cuda.device_count() > 1:  
+        model = nn.DataParallel(model)  
+    model.load_state_dict(torch.load(model_path))  
+    model.to(device)  
     model.eval()  
 
     with rasterio.open(image_path) as src:  
@@ -109,24 +91,19 @@ def classify_image(rank, world_size, model_path, image_path, output_path, no_dat
     result_image = np.full((h, w), no_data_value, dtype=np.float32)  
 
     with torch.no_grad():  
-        for row in tqdm(range(rank, h, world_size), desc=f"Processing rows (GPU {rank})"):  
+        for row in tqdm(range(h)):  
             for col in range(w):  
                 patch = padded_image[:, row:row + patch_size, col:col + patch_size]  
                 patch_tensor = torch.tensor(patch, dtype=torch.float32).unsqueeze(0).to(device)  
-
+                
                 output = model(patch_tensor)  
                 pred = output.argmax(dim=1).item()  
-
                 result_image[row, col] = pred  
 
-    if rank == 0:  
-        profile.update(dtype=rasterio.float32, count=1)  
-        with rasterio.open(output_path, 'w', **profile) as dst:  
-            dst.write(result_image, 1)  
+    profile.update(dtype=rasterio.float32, count=1)  
+    with rasterio.open(output_path, 'w', **profile) as dst:  
+        dst.write(result_image, 1)  
 
-    cleanup()  
-
-# 主函数  
 def main():  
     IMAGE_ROOT = '/home/Dataset/nw/Segmentation/CpeosTest/images'  
     train_img_path = os.path.join(IMAGE_ROOT, 'GF2_train_image.tif')  
@@ -136,30 +113,23 @@ def main():
     X_path = os.path.join(SAMPLE_ROOT, 'X_sample_11_50000.npy')  
     y_path = os.path.join(SAMPLE_ROOT, 'Y_sample_11_50000.npy')  
 
-    model_path = '/home/nw/Codes/Segement_Models/model_save/model_SimpleCNN_5000epoch.pth'  
-
-    test_img_path_1 = os.path.join(IMAGE_ROOT, 'train_mask.tif')  
+    model_path = '/home/nw/Codes/Segement_Models/model_save/model_ResNet50_500epoch.pth'  
     output_path_1 = '/home/Dataset/nw/Segmentation/CpeosTest/result/train_mask_Res50_results.tif'  
 
-    # 数据准备  
     X, y, nodata_value = prepare_data(train_img_path, label_img_path, X_path, y_path)  
-
-    # 数据集拆分  
     X_train, X_val, y_train, y_val = train_test_split(X, y, test_size=0.5, random_state=42)  
 
-    # 创建数据集  
     train_dataset = RemoteSensingDataset(X_train, y_train)  
     val_dataset = RemoteSensingDataset(X_val, y_val)  
 
     num_classes = 10  
-    model = SimpleCNN(num_classes=num_classes)  
+    model = ResNet50(num_classes=num_classes)  
 
-    # 启动分布式训练  
-    world_size = torch.cuda.device_count()  
-    mp.spawn(train, args=(world_size, model, train_dataset, val_dataset, model_path, 500), nprocs=world_size, join=True)  
+    # 训练模型  
+    train(model, train_dataset, val_dataset, model_path, num_epochs=500)  
 
-    # 使用分布式推理  
-    mp.spawn(classify_image, args=(world_size, model_path, test_img_path_1, output_path_1, nodata_value), nprocs=world_size, join=True)  
+    # 分类预测  
+    classify_image(model_path, train_img_path, output_path_1, nodata_value)  
 
 if __name__ == "__main__":  
-    main()
+    main()  

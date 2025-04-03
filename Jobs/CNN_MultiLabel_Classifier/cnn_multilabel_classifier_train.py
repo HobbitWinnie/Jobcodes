@@ -104,7 +104,7 @@ if __name__ == "__main__":
 
     # 初始化模型  
     num_labels = 60
-    model = create_model('resnet101', num_labels, device='cuda:0', multi_gpu=False)  
+    model = create_model('resnet101', num_labels, multi_gpu=True)  
 
     # 创建训练和测试数据集  
     train_dataset = MLRSNetDataset(train_data, model.preprocess)  
