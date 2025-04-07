@@ -1,10 +1,10 @@
-import os  
 import sys  
+sys.path.append('/home/nw/Codes')  
+
+import os  
 import logging  
 from torch.utils.data import DataLoader  
 
-sys.path.append('/home/nw/Codes/data_loader')  
-sys.path.append('/home/nw/Codes/RemoteCLIP/Image_Classification/src')  
 
 from WHURS19_DatasetLoader import WHURS19DatasetLoader  
 from MultiLabel_CSV_Loader import MultiLabelDataset

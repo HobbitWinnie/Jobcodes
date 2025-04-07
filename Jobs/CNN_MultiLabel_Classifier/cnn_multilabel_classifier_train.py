@@ -10,7 +10,7 @@ from torch.utils.data import DataLoader
 from sklearn.model_selection import train_test_split  
 from sklearn.metrics import f1_score  
 from Loaders.MLRSNet_loader import MLRSNetDataset
-from Models.CNN_MultiLabel_Classifier.model_factory import create_model
+from Models.CNN_MultiLabel_Classification.model_factory import create_model
 
 
 def load_MLRSNet_data(images_dir, labels_dir):  
