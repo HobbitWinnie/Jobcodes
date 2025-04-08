@@ -9,7 +9,7 @@ from torch.utils.data import DataLoader
 from sklearn.metrics import accuracy_score
 from sklearn.model_selection import train_test_split  
 
-from Models.Pixel_based_CNN_classification.ResNet50 import ResNet50
+from Models.CNN_Pixel_based_Classification.ResNet50 import ResNet50
 from dataset import prepare_dataset, RemoteSensingDataset  
 from config import ModelConfig  
 
