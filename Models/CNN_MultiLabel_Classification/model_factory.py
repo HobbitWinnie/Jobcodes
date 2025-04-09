@@ -1,6 +1,6 @@
 from .architectures import *  
 
-def create_model(arch, num_classes, multi_gpu=False, device=None):  
+def create_model(arch, num_classes, multi_gpu=False, device_ids=[0]):  
     """Model factory with error handling"""  
     model_registry = {  
         'resnet101': ResNetClassifier,  
@@ -15,4 +15,4 @@ def create_model(arch, num_classes, multi_gpu=False, device=None):
         available = ', '.join(model_registry.keys())  
         raise ValueError(f"不支持的模型架构: {arch}，可选: {available}")  
     
-    return model_registry[arch](num_classes, multi_gpu, device)  
+    return model_registry[arch](num_classes, multi_gpu, device_ids)  

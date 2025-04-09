@@ -3,7 +3,7 @@ from torch.utils.data import Dataset
 from PIL import Image  
 import torch  
 
-class MultiLabelDatasetLoader(Dataset):  
+class MultiLabelDataset(Dataset):  
     def __init__(self, data_path, preprocess_func):  
         self.data_path = data_path  
         self.preprocess_func = preprocess_func  

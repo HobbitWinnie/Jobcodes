@@ -5,7 +5,7 @@ import torch
 import numpy as np  
 
 # 数据集类
-class WHURS19DatasetLoader(Dataset):
+class WHURS19Dataset(Dataset):
     def __init__(self, data_path, preprocess_func):
         self.preprocess_func = preprocess_func
         self.image_paths = []

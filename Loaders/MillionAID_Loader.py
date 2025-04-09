@@ -4,7 +4,7 @@ from PIL import Image
 from torch.utils.data import Dataset  
 
 # 数据集类  
-class MillionAIDDatasetLoader(Dataset):  
+class MillionAIDDataset(Dataset):  
     def __init__(self, data_path, preprocess_func):  
         self.preprocess_func = preprocess_func  
         self.image_paths = []  

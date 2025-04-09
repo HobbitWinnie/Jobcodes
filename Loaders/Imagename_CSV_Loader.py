@@ -1,11 +1,9 @@
 import os  
-import glob  
 import pandas as pd  
 from PIL import Image  
 from torch.utils.data import Dataset  
-from torchvision import transforms  
 
-class WHURS19DatasetLoader(Dataset):  
+class ImagenameCSVDataset(Dataset):  
     def __init__(self, image_dir, csv_file, extensions=None, transform=None):  
         """  
         :param image_dir: 存储图片的目录。  
