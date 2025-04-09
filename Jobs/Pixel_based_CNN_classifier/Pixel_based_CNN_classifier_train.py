@@ -3,17 +3,52 @@ sys.path.append('/home/nw/Codes')
 
 import logging
 import torch
+from pathlib import Path
 import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import DataLoader
 from sklearn.metrics import accuracy_score
-from sklearn.model_selection import train_test_split  
-
 from Models.CNN_Pixel_based_Classification.ResNet50 import ResNet50
-from dataset import prepare_dataset, RemoteSensingDataset  
-from config import ModelConfig  
+from dataset_util import prepare_dataset, get_dataloaders
 
 logger = logging.getLogger(__name__)
+
+
+class TrainConfig:
+    """模型训练配置参数"""
+    
+    def __init__(
+        self,
+        data_root: Path = Path("/home/Dataset/nw/Segmentation/CpeosTest"),
+        model_save_path: Path = Path("/home/nw/Codes/Jobs/Pixel_based_CNN_classifier/model_save"),
+        num_classes: int = 10,
+        batch_size: int = 64,
+        num_epochs: int = 500,
+        learning_rate: float = 0.001,
+        test_size: float = 0.5,
+        sample_size: int = 50000,
+        patch_size: int = 11
+    ):
+        # 路径配置
+        self.train_image_path = data_root / "images/GF2_train_image.tif"
+        self.label_image_path = data_root / "images/train_label.tif"
+        self.sample_dir = data_root / "samples"
+        self.model_path = model_save_path / "model_ResNet50_500epoch.pth"
+
+        # 训练参数
+        self.num_classes = num_classes
+        self.batch_size = batch_size
+        self.num_epochs = num_epochs
+        self.learning_rate = learning_rate
+        self.test_size = test_size
+        
+        # 数据采样参数
+        self.sample_size = sample_size
+        self.patch_size = patch_size
+
+    @property
+    def device(self) -> str:
+        return "cuda" if torch.cuda.is_available() else "cpu"
 
 
 class ModelTrainer:
@@ -35,16 +70,6 @@ class ModelTrainer:
             logger.info(f"使用 {torch.cuda.device_count()} 块GPU")
             return nn.DataParallel(model)
         return model.to(self.device)
-
-    def _create_dataloader(self, dataset, shuffle=True) -> DataLoader:
-        """创建数据加载器"""
-        return DataLoader(
-            dataset,
-            batch_size=self.config.batch_size * torch.cuda.device_count(),
-            shuffle=shuffle,
-            num_workers=4,
-            pin_memory=True
-        )
 
     def train_epoch(self, train_loader: DataLoader) -> float:
         """单epoch训练"""
@@ -93,11 +118,8 @@ class ModelTrainer:
         )
         logger.info(f"模型已保存至 {save_path}")
 
-    def run_training(self, train_dataset, val_dataset):
+    def run_training(self, train_loader, val_loader):
         """执行完整训练流程"""
-        train_loader = self._create_dataloader(train_dataset)
-        val_loader = self._create_dataloader(val_dataset, shuffle=False)
-
         for epoch in range(self.config.num_epochs):
             train_loss = self.train_epoch(train_loader)
             val_acc = self.validate(val_loader)
@@ -113,34 +135,33 @@ class ModelTrainer:
 
 def main():  
     # 初始化配置  
-    config = ModelConfig()  
+    config = TrainConfig()  
 
     # 准备数据集  
-    X, y, nodata_value = prepare_dataset(  
+    X, y, nodata = prepare_dataset(  
         image_path=config.train_image_path,  
         label_path=config.label_image_path,  
         save_dir=config.sample_dir,  
         sample_size=config.sample_size,  
-        patch_size=config.patch_size  
-    ) 
-
-    # 划分训练验证集  
-    X_train, X_val, y_train, y_val = train_test_split(
-        X, y, 
+        patch_size=config.patch_size,
         test_size=config.test_size, 
-        random_state=42
     )  
 
-    # 创建数据集  
-    train_dataset = RemoteSensingDataset(X_train, y_train)  
-    val_dataset = RemoteSensingDataset(X_val, y_val)  
+    train_loader, val_loader = get_dataloaders(
+        patches=X,
+        labels=y,
+        batch_size=192,  
+        num_workers=8,  # 根据CPU核心数调整  
+        pin_memory=True,  
+        persistent_workers=True
+    )
 
     # 初始化模型  
     model = ResNet50(num_classes=config.num_classes)
 
     # 启动训练  
     trainer = ModelTrainer(config, model)  
-    trainer.run_training(train_dataset, val_dataset)  
+    trainer.run_training(train_loader, val_loader)  
 
 
 if __name__ == "__main__":  

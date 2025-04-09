@@ -1,13 +1,38 @@
 
 import logging
 import numpy as np
+from pathlib import Path
 import rasterio
 import torch
 import torch.nn as nn
 from typing import Tuple
-from data_loader import GeoTIFFLoader
-from config import PredictConfig
-from Models.Pixel_based_CNN_classification.ResNet50 import ResNet50
+from nw.Codes.Jobs.Pixel_based_CNN_classifier.remote_data_loader import GeoTIFFLoader
+from Models.CNN_Pixel_based_Classification.ResNet50 import ResNet50
+
+
+class PredictConfig:  
+    """预测任务配置参数"""  
+    
+    def __init__(  
+        self,  
+        model_path: Path = Path("/home/nw/Codes/Segement_Models/model_save/model_ResNet50_500epoch.pth"),  
+        input_image: Path = Path("/home/Dataset/nw/Segmentation/CpeosTest/images/GF2_train_image.tif"),  
+        output_path: Path = Path("/home/Dataset/nw/Segmentation/CpeosTest/result/prediction.tif"),  
+        num_classes: int = 10,  
+        patch_size: int = 7,  
+        nodata_value: float = 15.0  
+    ):  
+        self.model_path = model_path  
+        self.input_image = input_image  
+        self.output_path = output_path  
+        self.num_classes = num_classes  
+        self.patch_size = patch_size  
+        self.nodata_value = nodata_value  
+
+    @property  
+    def device(self) -> str:  
+        return "cuda:0" if torch.cuda.is_available() else "cpu"  
+
 
 
 logger = logging.getLogger(__name__)

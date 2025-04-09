@@ -4,8 +4,9 @@ from pathlib import Path
 from typing import Optional, Tuple
 import numpy as np
 import torch
-from torch.utils.data import Dataset
-from data_loader import GeoTIFFLoader, PatchSampler
+from torch.utils.data import Dataset, DataLoader
+from sklearn.model_selection import train_test_split  
+from remote_data_loader import GeoTIFFLoader, PatchSampler
 
 logger = logging.getLogger(__name__)
 
@@ -43,6 +44,7 @@ class RemoteSensingDataset(Dataset):
             torch.as_tensor(label, dtype=torch.long)
         )
 
+
 class DatasetManager:
     """数据集存储管理"""
     
@@ -64,12 +66,13 @@ class DatasetManager:
             logger.warning(f"{load_dir} 中未找到数据集")
             return None
 
+
 def prepare_dataset(
     image_path: Path,
     label_path: Path,
     save_dir: Path,
     sample_size: int = 50000,
-    patch_size: int = 7
+    patch_size: int = 7,
 ) -> Tuple[np.ndarray, np.ndarray, float]:
     """端到端数据集准备流程
     Returns:
@@ -92,4 +95,61 @@ def prepare_dataset(
     
     # 保存数据集
     DatasetManager.save_dataset(X, y, save_dir)
+
     return X, y, nodata
+
+
+def get_dataloaders(
+        patches,
+        labels,
+        batch_size=192,  
+        test_size=0.2,          # 更合理的默认划分比例  
+        num_workers=8,          # 根据CPU核心数优化  
+        pin_memory=True,        # 提升GPU传输效率  
+        persistent_workers=True # 保持worker进程  
+    ):
+    
+    X_train, X_val, y_train, y_val= train_test_split(
+        patches, labels,
+        test_size=test_size, 
+        random_state=42,
+    ) 
+
+    # 创建数据集  
+    train_dataset = RemoteSensingDataset(X_train, y_train)  
+    val_dataset = RemoteSensingDataset(X_val, y_val) 
+
+    # 打印数据集的样本数量  
+    print(f"Training dataset size: {len(train_dataset)}")  
+    print(f"Testing dataset size: {len(val_dataset)}")  
+
+    
+    # 配置数据加载器  
+    train_loader = DataLoader(  
+        train_dataset,  
+        batch_size=batch_size,  
+        shuffle=True,  
+        num_workers=num_workers,  
+        pin_memory=pin_memory,  
+        persistent_workers=persistent_workers,  
+        prefetch_factor=2    # 提升数据预取  
+    )  
+    
+    val_loader = DataLoader(  
+        val_dataset,  
+        batch_size=batch_size,  
+        shuffle=False,       # 验证集不需要shuffle  
+        num_workers=num_workers//2,  # 减少验证集workers  
+        pin_memory=pin_memory,  
+        persistent_workers=persistent_workers  
+    ) 
+
+    # 打印数据集统计信息  
+    print(f"\n{' Dataset Info ':-^40}")  
+    print(f"| {'Split':<15} | {'Samples':>8} |")  
+    print(f"| {'-'*15} | {'-'*8} |")  
+    print(f"| {'Training':<15} | {len(train_dataset):>8} |")  
+    print(f"| {'Validation':<15} | {len(val_dataset):>8} |")  
+    print(f"{'-'*40}\n")  
+
+    return train_loader, val_loader  

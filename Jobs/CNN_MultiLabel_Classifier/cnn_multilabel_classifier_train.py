@@ -66,7 +66,7 @@ def train_model(model, train_loader, val_loader, MODEL_SAVE_DIR, num_epochs=1000
                 }, os.path.join(MODEL_SAVE_DIR, 'best_model.pth'))  
                 
             # 定期保存检查点  
-            if (epoch + 1) % 50 == 0:  
+            if (epoch + 1) % 200 == 0:  
                 torch.save({  
                     'epoch': epoch,  
                     'state_dict': model.state_dict(),  
@@ -110,7 +110,7 @@ if __name__ == "__main__":
 
     # 初始化模型  
     model = create_model(
-        arch='resnet101', 
+        arch='densenet201', 
         num_classes=60, 
         multi_gpu=True, 
         device_ids=[2,3]
