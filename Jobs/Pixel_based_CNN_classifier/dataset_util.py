@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import Optional, Tuple
 import numpy as np
 import torch
+import os
 from torch.utils.data import Dataset, DataLoader
 from sklearn.model_selection import train_test_split  
 from remote_data_loader import GeoTIFFLoader, PatchSampler
@@ -49,21 +50,20 @@ class DatasetManager:
     """数据集存储管理"""
     
     @staticmethod
-    def save_dataset(X: np.ndarray, y: np.ndarray, save_dir: Path) -> None:
-        save_dir.mkdir(parents=True, exist_ok=True)
-        np.save(save_dir / "X_samples.npy", X)
-        np.save(save_dir / "y_samples.npy", y)
-        logger.info(f"数据集已保存至 {save_dir}")
+    def save_dataset(X: np.ndarray, y: np.ndarray, sample_X_path, sample_Y_path) -> None:
+        np.save(sample_X_path, X)
+        np.save(sample_Y_path, y)
+        logger.info(f"数据集已保存至 {sample_X_path, sample_Y_path}")
 
     @staticmethod
-    def load_dataset(load_dir: Path) -> Optional[Tuple[np.ndarray, np.ndarray]]:
+    def load_dataset(sample_X_path: Path, sample_Y_path: Path):
         try:
-            X = np.load(load_dir / "X_samples.npy")
-            y = np.load(load_dir / "y_samples.npy")
-            logger.info(f"从 {load_dir} 加载数据集")
+            X = np.load(sample_X_path)
+            y = np.load(sample_Y_path)
+            logger.info(f"从 {sample_X_path, sample_Y_path} 加载样本数据集")
             return X, y
         except FileNotFoundError:
-            logger.warning(f"{load_dir} 中未找到数据集")
+            logger.warning(f"未找到样本数据集")
             return None
 
 
@@ -73,7 +73,7 @@ def prepare_dataset(
     save_dir: Path,
     sample_size: int = 50000,
     patch_size: int = 7,
-) -> Tuple[np.ndarray, np.ndarray, float]:
+):
     """端到端数据集准备流程
     Returns:
         X: 样本数据 [N, C, H, W]
@@ -81,22 +81,29 @@ def prepare_dataset(
         nodata: 无效值标识
     """
     # 加载原始数据
-    image, meta, nodata = GeoTIFFLoader.load_geotiff(image_path)
-    labels, _, _ = GeoTIFFLoader.load_geotiff(label_path)
+    image, _, _ = GeoTIFFLoader.load_geotiff(image_path)
+    labels, _, label_nodata = GeoTIFFLoader.load_geotiff(label_path)
     
     # 尝试加载已存数据集
-    saved_data = DatasetManager.load_dataset(save_dir)
+    save_dir.mkdir(parents=True, exist_ok=True)  
+    sample_X_file = f"X_sample_{patch_size}_{sample_size}.npy"  # 推荐格式化命名  
+    sample_Y_file = f"Y_sample_{patch_size}_{sample_size}.npy"  # 推荐格式化命名  
+
+    sample_X_path = save_dir / sample_X_file  
+    sample_Y_path = save_dir / sample_Y_file  
+    saved_data = DatasetManager.load_dataset(sample_X_path, sample_Y_path)
+   
     if saved_data:
-        return saved_data[0], saved_data[1], nodata
+        return saved_data[0], saved_data[1], label_nodata
     
     # 创建采样器并采样
     sampler = PatchSampler(patch_size)
-    X, y = sampler.sample(image, labels[0], nodata, sample_size)  # 标签为单通道
+    X, y = sampler.sample(image, labels[0], label_nodata, sample_size)  # 标签为单通道
     
     # 保存数据集
-    DatasetManager.save_dataset(X, y, save_dir)
+    DatasetManager.save_dataset(X, y, sample_X_path, sample_Y_path)
 
-    return X, y, nodata
+    return X, y, label_nodata
 
 
 def get_dataloaders(

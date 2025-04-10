@@ -107,7 +107,6 @@ if __name__ == "__main__":
     DATASET_DIR = '/home/Dataset/nw/Multilabel-Datasets/MLRSNet_dataset'
     MODEL_SAVE_DIR = '/home/nw/Codes/Jobs/CNN_MultiLabel_Classifier/model_save'
 
-
     # 初始化模型  
     model = create_model(
         arch='densenet201', 

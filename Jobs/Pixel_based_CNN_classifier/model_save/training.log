@@ -1,0 +1,7 @@
+2025-04-10 14:53:44,658 - remote_data_loader - INFO - 成功加载 /home/Dataset/nw/Segmentation/CpeosTest/images/GF2_train_image.tif: 形状 (4, 13600, 16882)
+2025-04-10 14:53:46,093 - remote_data_loader - INFO - 成功加载 /home/Dataset/nw/Segmentation/CpeosTest/images/train_label.tif: 形状 (1, 13600, 16882)
+2025-04-10 14:53:52,432 - dataset_util - INFO - 从 (PosixPath('/home/Dataset/nw/Segmentation/CpeosTest/samples/X_sample_11_50000.npy'), PosixPath('/home/Dataset/nw/Segmentation/CpeosTest/samples/Y_sample_11_50000.npy')) 加载样本数据集
+2025-04-10 14:53:58,452 - __main__ - INFO - 手动选择GPU设备: [2, 3]
+2025-04-10 14:53:58,981 - __main__ - INFO - 启用DataParallel，使用GPU: [2, 3]
+2025-04-10 14:54:31,941 - __main__ - INFO - 模型已保存至 /home/nw/Codes/Jobs/Pixel_based_CNN_classifier/model_save/model_ResNet50_500epoch.pth
+2025-04-10 14:54:31,941 - __main__ - INFO - Epoch 1/100 | Loss: 0.4609 | Acc: 88.63% | LR: 2.00e-04
