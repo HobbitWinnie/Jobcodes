@@ -1,25 +1,27 @@
 import sys  
 sys.path.append('/home/nw/Codes')  
 
-import os  
+from pathlib import Path
 import time  
+import logging
 import torch  
 import torch.nn as nn  
 import torch.cuda.amp as amp
 from sklearn.metrics import f1_score  
 from Loaders.MLRSNet_loader import get_dataloaders
 from Models.CNN_MultiLabel_Classification.model_factory import create_model
+from utils.set_logging import setup_logging
 
 
-def train_model(model, train_loader, val_loader, MODEL_SAVE_DIR, num_epochs=1000):  
+def train_model(model, train_loader, val_loader, MODEL_SAVE_DIR: Path, num_epochs=1000):  
     criterion = nn.BCEWithLogitsLoss()  
     scaler = amp.GradScaler()  # 混合精度训练
     best_f1 = 0  
     history = {'train_loss': [], 'val_f1': []}  
 
     # 创建保存目录  
-    os.makedirs(MODEL_SAVE_DIR, exist_ok=True)  
-    checkpoint_path = os.path.join(MODEL_SAVE_DIR, 'last_checkpoint.pth')  
+    MODEL_SAVE_DIR.mkdir(parents=True, exist_ok=True)
+    checkpoint_path = MODEL_SAVE_DIR / 'last_checkpoint.pth' 
     
     for epoch in range(num_epochs):  
         epoch_loss = 0  
@@ -63,7 +65,7 @@ def train_model(model, train_loader, val_loader, MODEL_SAVE_DIR, num_epochs=1000
                     'state_dict': model.state_dict(),  
                     'optimizer': model.optimizer.state_dict(),  
                     'scheduler': model.scheduler.state_dict(),  
-                }, os.path.join(MODEL_SAVE_DIR, 'best_model.pth'))  
+                }, MODEL_SAVE_DIR / 'best_model.pth')
                 
             # 定期保存检查点  
             if (epoch + 1) % 200 == 0:  
@@ -76,7 +78,7 @@ def train_model(model, train_loader, val_loader, MODEL_SAVE_DIR, num_epochs=1000
                 
         # 训练日志  
         lr = model.optimizer.param_groups[0]['lr']  
-        print(f"Epoch {epoch+1:03d} | "  
+        logging.info(f"Epoch {epoch+1:03d} | "  
               f"Loss: {epoch_loss/len(train_loader):.4f} | "  
               f"LR: {lr:.2e} | "  
               f"F1: {val_f1:.4f} | "  
@@ -104,8 +106,11 @@ def evaluate(model, dataloader, threshold=0.5):
 if __name__ == "__main__":  
 
     # MLRSNetDataset
-    DATASET_DIR = '/home/Dataset/nw/Multilabel-Datasets/MLRSNet_dataset'
-    MODEL_SAVE_DIR = '/home/nw/Codes/Jobs/CNN_MultiLabel_Classifier/model_save'
+    DATASET_DIR = Path('/home/Dataset/nw/Multilabel-Datasets/MLRSNet_dataset')
+    MODEL_SAVE_DIR = Path('/home/nw/Codes/Jobs/CNN_MultiLabel_Classifier/model_save')
+
+    """设置日志配置"""
+    setup_logging(MODEL_SAVE_DIR)
 
     # 初始化模型  
     model = create_model(
@@ -117,24 +122,24 @@ if __name__ == "__main__":
 
     # 加载数据 
     train_loader, test_loader =  get_dataloaders(
-        images_dir = os.path.join(DATASET_DIR, 'Images'),
-        labels_dir = os.path.join(DATASET_DIR, 'Labels'),  
+        images_dir = DATASET_DIR / 'Images',
+        labels_dir = DATASET_DIR / 'Labels',
         preprocess=model.preprocess,
         batch_size=192,  
-        num_workers=8,  # 根据CPU核心数调整  
+        num_workers=4,  # 根据CPU核心数调整  
         pin_memory=True,  
         persistent_workers=True      
     )
    
     # 恢复训练（可选）  
     try:  
-        checkpoint = torch.load(os.path.join(MODEL_SAVE_DIR,'last_checkpoint.pth'))  
+        checkpoint = torch.load(MODEL_SAVE_DIR / 'last_checkpoint.pth')
         model.load_state_dict(checkpoint['state_dict'])  
         model.optimizer.load_state_dict(checkpoint['optimizer'])  
         model.scheduler.load_state_dict(checkpoint['scheduler'])  
-        print(f"成功从第{checkpoint['epoch']}个epoch恢复训练")  
+        logging.info(f"成功从第{checkpoint['epoch']}个epoch恢复训练")  
     except Exception as e:  
-        print("未找到检查点，开始新训练")  
+        logging.info("未找到检查点，开始新训练")  
 
     # 训练模型  
     train_model(model, train_loader, test_loader, MODEL_SAVE_DIR, num_epochs=1000)  

@@ -3,7 +3,7 @@ sys.path.append('/home/nw/Codes')
 
 import logging
 import torch
-import os
+from datetime import datetime  
 from pathlib import Path
 import torch.nn as nn
 import torch.optim as optim
@@ -12,6 +12,7 @@ from torch.cuda.amp import autocast, GradScaler
 from sklearn.metrics import accuracy_score
 from Models.CNN_Pixel_based_Classification.ResNet50 import ResNet50
 from dataset_util import prepare_dataset, get_dataloaders
+from utils.set_logging import setup_logging
 
 
 logger = logging.getLogger(__name__)
@@ -234,16 +235,9 @@ def main():
         num_epochs=100,
         model_save_path = model_save_path
     )  
+    # 日志和输出目录
+    setup_logging(model_save_path)
 
-    # 配置日志系统  
-    logging.basicConfig(  
-    level=logging.INFO,  
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',  
-    handlers=[  
-        logging.FileHandler(model_save_path / "training.log"),  
-        logging.StreamHandler()  
-    ]  
-)  
     try:  
         # 数据准备  
 
