@@ -14,9 +14,9 @@ from pathlib import Path
 from datetime import datetime
 from torch.cuda.amp import GradScaler, autocast
 from data.dataset import create_dataloaders
-from clip_vit_seg_model import CLIPVITSegmentation
+from nw.Codes.Models.RemoteCLIP_based_Segmentation.clip_vit_seg_model import CLIPVITSegmentation
 from config import get_config
-from combined_loss import CombinedLoss
+from nw.Codes.Models.RemoteCLIP_based_Segmentation.modules.combined_loss import CombinedLoss
 from utils import setup_logging
 
 

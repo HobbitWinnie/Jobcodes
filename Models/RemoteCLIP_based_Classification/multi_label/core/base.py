@@ -6,24 +6,60 @@ import pandas as pd
 from abc import ABC, abstractmethod
 from PIL import Image
 from sklearn.metrics import f1_score, fbeta_score
+import torch
+import open_clip
 
 class BaseCLIPClassifier(ABC):
     """CLIP分类器基类（模板方法模式）"""
     
-    def __init__(self, ckpt_path: str, model_name: str = 'ViT-L-14', device: str = None):
-        # 初始化CLIP模型
-        import torch
-        import open_clip
+    def __init__(self, ckpt_path: str,   
+                 model_name: str = 'ViT-L-14',  
+                 device_ids: list = None):  
+        """  
+        Args:  
+            ckpt_path: CLIP模型权重路径  
+            model_name: CLIP模型名称  
+            device_ids: 使用的GPU设备ID列表（空列表时自动选择可用设备）  
+        """ 
         
-        self.model_name = model_name
-        self.device = device or ('cuda' if torch.cuda.is_available() else 'cpu')
-        
-        self.model, _, self.preprocess_func = open_clip.create_model_and_transforms(model_name)
-        ckpt = torch.load(ckpt_path, map_location='cpu')
-        self.model.load_state_dict(ckpt)
-        self.model = self.model.to(self.device).eval()
-        self.logger = logging.getLogger(self.__class__.__name__)
+        # 初始化设备配置  
+        self.device_ids = device_ids or []  
+        self._validate_devices()  
 
+        # 自动确定主设备  
+        self.main_device = self._determine_main_device()        
+
+        # 初始化CLIP模型  
+        self.model, _, self.preprocess_func = open_clip.create_model_and_transforms(model_name)  
+        ckpt = torch.load(ckpt_path, map_location='cpu')  
+        self.model.load_state_dict(ckpt) 
+
+        # 设备配置  
+        self.model = self.model.to(self.main_device)  
+        if len(self.device_ids) > 1:  
+            self.model = torch.nn.DataParallel(self.model, device_ids=self.device_ids)  
+        
+        self.model.eval()  
+        self.logger = logging.getLogger(self.__class__.__name__)  
+
+    def _validate_devices(self):  
+        """设备配置验证"""  
+        if self.device_ids:  
+            if not torch.cuda.is_available():  
+                raise RuntimeError("CUDA不可用时不能指定device_ids")  
+                
+            available_ids = list(range(torch.cuda.device_count()))  
+            if any(idx not in available_ids for idx in self.device_ids):  
+                raise ValueError(  
+                    f"无效的device_ids {self.device_ids}，可用设备: {available_ids}"  
+                )  
+
+    def _determine_main_device(self) -> str:  
+        """自动确定主计算设备"""  
+        if self.device_ids:  
+            return f"cuda:{self.device_ids[0]}"  
+        return "cuda:0" if torch.cuda.is_available() else "cpu"  
+    
     def train(self, train_loader, val_loader=None, **kwargs):
         """训练模板方法"""
         self.logger.info("Training started")
@@ -43,8 +79,6 @@ class BaseCLIPClassifier(ABC):
         except Exception as e:
             self.logger.error(f"Training failed: {str(e)}")
             raise
-        finally:
-            self._post_train()
 
     def evaluate(self, data_loader) -> dict:
         """评估模板方法"""
@@ -80,17 +114,18 @@ class BaseCLIPClassifier(ABC):
 
     def _get_features(self, images):
         """获取图像特征"""
-        import torch
-        images = images.to(self.device)
-        with torch.no_grad(), torch.cuda.amp.autocast(enabled='cuda' in self.device):
+        images = images.to(self.main_device)  
+        with torch.no_grad(), torch.cuda.amp.autocast(enabled='cuda' in self.main_device):  
             features = self.model.encode_image(images)
         return (features / features.norm(dim=-1, keepdim=True)).cpu().numpy()
 
     def _calc_metrics(self, y_true, y_pred):
         """计算评估指标"""
+        threshold = 0.5  
+        y_pred_bin = (y_pred > threshold).astype(int)  
         return {
-            'f1': f1_score(y_true, y_pred, average='macro', zero_division=1),
-            'f2': fbeta_score(y_true, y_pred, beta=2, average='macro', zero_division=1)
+            'f1': f1_score(y_true, y_pred_bin, average='macro', zero_division=1),
+            'f2': fbeta_score(y_true, y_pred_bin, beta=2, average='macro', zero_division=1)
         }
 
     def _iter_images(self, folder_path):
@@ -113,10 +148,6 @@ class BaseCLIPClassifier(ABC):
         """保存结果"""
         pd.DataFrame(results).to_csv(output_path, index=False)
         self.logger.info(f"Saved {len(results)} predictions to {output_path}")
-
-    def _post_train(self):
-        """训练后清理（可重写）"""
-        pass
 
     def _handle_error(self, img_path, error):
         """错误处理（可重写）"""

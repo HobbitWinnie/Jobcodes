@@ -76,11 +76,7 @@ if __name__ == "__main__":
     test_loader  = DataLoader(test_dataset, batch_size=192, num_workers=42, shuffle=True)  
    
     # 训练模型   
-    classifier.train_model(train_loader, test_loader, num_epochs=100)  
+    classifier.train(train_loader, test_loader, num_epochs=100)  
 
     # 批量分类  
     classifier.classify_images('input_images', 'predictions.csv')  
-
-    # 评估模型  
-    results = classifier.evaluate(test_loader)  
-    print(f"F1 Score: {results['f1']:.4f}, F2 Score: {results['f2']:.4f}")  
