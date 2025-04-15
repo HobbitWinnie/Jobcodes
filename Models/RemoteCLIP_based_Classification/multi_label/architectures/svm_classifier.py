@@ -9,7 +9,7 @@ from ..core.base import BaseCLIPClassifier
 class RankSVMClassifier(BaseCLIPClassifier):
     """SVM排序分类器"""
     
-    def __init__(self, ckpt_path: str, kernel: str = 'linear', **kwargs):
+    def __init__(self, ckpt_path: str, num_labels: int, kernel: str = 'linear', **kwargs):
         super().__init__(ckpt_path, **kwargs)
         self.scaler = StandardScaler()
         self.classifier = OneVsRestClassifier(SVC(kernel=kernel, probability=True))
@@ -18,20 +18,28 @@ class RankSVMClassifier(BaseCLIPClassifier):
         self.model.float()  # 强制使用FP32  
         self.model.half = lambda: self.model  # 防止意外转为半精度  
 
-    def _train_impl(self, features: np.ndarray, labels: np.ndarray):
-        """训练实现"""
-        # 确保使用CPU numpy数组  
-        features = features.astype(np.float32)  
-        labels = labels.astype(np.int32) 
-
-        # 特征标准化
-        self.scaler.fit(features)
-        scaled_features = self.scaler.transform(features)
+    def train(self, train_loader, **kwargs):  
+        """训练实现（覆盖基类抽象方法）"""  
+        # 准备数据（使用基类方法）  
+        features, labels = self._prepare_data(train_loader)  
         
-        # 训练分类器
-        self.classifier.fit(scaled_features, labels)
-        self.logger.info(f"SVM trained with {self.classifier.estimator.kernel} kernel")
+        # 类型转换确保稳定性  
+        features = features.astype(np.float32)  
+        labels = labels.astype(np.int32)  
+        
+        # 标准化处理  
+        self.scaler.fit(features)  
+        scaled_features = self.scaler.transform(features)  
+        
+        # 训练分类器  
+        self.classifier.fit(scaled_features, labels)  
+        self.logger.info(f"SVM trained with {self.classifier.estimator.kernel} kernel")  
 
+    def evaluate(self, data_loader) -> dict:  
+        """评估实现（覆盖基类抽象方法）"""  
+        y_true, y_pred = self._get_predictions(data_loader)  
+        return self._calc_metrics(y_true, y_pred)  
+    
     def _get_predictions(self, data_loader) -> tuple:
         """获取预测结果"""
         all_features, all_labels = [], []
@@ -44,19 +52,24 @@ class RankSVMClassifier(BaseCLIPClassifier):
         scaled_features = self.scaler.transform(np.vstack(all_features))  
         return np.concatenate(all_labels), self.classifier.predict(scaled_features)  
 
-    def _format_prediction(self, features: np.ndarray) -> dict:
-        """格式化预测结果"""
+    def _format_prediction(self, features: np.ndarray) -> dict:  
+        """格式化预测结果（适配新版接口）"""  
         # 处理可能的设备残留  
         if isinstance(features, torch.Tensor):  
-            features = features.cpu().numpy().astype(np.float32)  
-
+            features = features.cpu().numpy()  
+            
+        # 确保数据类型  
+        features = features.astype(np.float32)  
         scaled_features = self.scaler.transform(features)  
+        
+        # 获取预测结果  
         pred = self.classifier.predict(scaled_features)[0]  
         proba = self.classifier.predict_proba(scaled_features)[0]  
         return {  
             'predicted_label': int(pred),  
-            'probabilities': {str(i): float(p) for i, p in enumerate(proba)}  
-        } 
+            'probabilities': {str(i): float(p) for i, p in enumerate(proba)},  
+            'top3_labels': np.argsort(proba)[-3:][::-1].tolist()  
+        }  
     
     def __del__(self):  
         """对象销毁时清理SVM资源"""  

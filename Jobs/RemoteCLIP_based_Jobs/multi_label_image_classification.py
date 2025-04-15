@@ -9,6 +9,7 @@ from sklearn.model_selection import train_test_split
 from Models.RemoteCLIP_based_Classification.multi_label.factory import ClassifierFactory
 from Loaders.MLRSNet_loader  import MLRSNetDataset
 
+from utils.set_logging import setup_logging
 
 def get_augmentation_transforms():  
     return transforms.Compose([  
@@ -48,6 +49,9 @@ if __name__ == "__main__":
     images_dir = os.path.join(DATASET_DIR, 'Images')  
     labels_dir = os.path.join(DATASET_DIR, 'Labels')   
      
+    """设置日志配置"""
+    setup_logging()
+
     # 加载数据  
     data = load_MLRSNet_data(images_dir, labels_dir)  
 
@@ -57,9 +61,11 @@ if __name__ == "__main__":
     # 初始化模型  
     num_labels = 17
     classifier = ClassifierFactory.create(  
-        classifier_type='fc',  
+        classifier_type='svm',  
         ckpt_path=checkpoint_path,  
-        num_labels=num_labels  
+        num_labels=num_labels,
+        device_ids=[0,1,2,3]
+
     )  
 
     # 创建训练和测试数据集  
@@ -75,8 +81,13 @@ if __name__ == "__main__":
     train_loader  = DataLoader(train_dataset, batch_size=192, num_workers=42, shuffle=True)  
     test_loader  = DataLoader(test_dataset, batch_size=192, num_workers=42, shuffle=True)  
    
-    # 训练模型   
-    classifier.train(train_loader, test_loader, num_epochs=100)  
+    # 训练模型（FC）
+    # classifier.train(train_loader, test_loader, num_epochs=10000)  
+
+    # 训练模型（SVM, KNN）
+    classifier.train(train_loader, num_epochs=10000)  
+    metrics = classifier.evaluate(test_loader)  
+    print(f"Test F1: {metrics['f1']:.4f}") 
 
     # 批量分类  
     classifier.classify_images('input_images', 'predictions.csv')  

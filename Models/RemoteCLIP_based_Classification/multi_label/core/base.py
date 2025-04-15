@@ -21,26 +21,37 @@ class BaseCLIPClassifier(ABC):
             model_name: CLIP模型名称  
             device_ids: 使用的GPU设备ID列表（空列表时自动选择可用设备）  
         """ 
+        # 初始化日志  
+        self.logger = logging.getLogger(self.__class__.__name__)  
         
         # 初始化设备配置  
         self.device_ids = device_ids or []  
         self._validate_devices()  
-
-        # 自动确定主设备  
         self.main_device = self._determine_main_device()        
+        self.logger.info(f"Main device: {self.main_device}")  
 
-        # 初始化CLIP模型  
-        self.model, _, self.preprocess_func = open_clip.create_model_and_transforms(model_name)  
-        ckpt = torch.load(ckpt_path, map_location='cpu')  
-        self.model.load_state_dict(ckpt) 
+        # 模型初始化  
+        self.model, self.preprocess_func = self._init_clip_model(model_name, ckpt_path)  
+        self.logger.info(f"Loaded {model_name} from {ckpt_path}")  
 
-        # 设备配置  
-        self.model = self.model.to(self.main_device)  
-        if len(self.device_ids) > 1:  
-            self.model = torch.nn.DataParallel(self.model, device_ids=self.device_ids)  
+
+    def _init_clip_model(self, model_name: str, ckpt_path: str) -> tuple:  
+        """初始化CLIP模型核心方法"""  
+        # 创建模型  
+        model, _, preprocess = open_clip.create_model_and_transforms(model_name)  
         
-        self.model.eval()  
-        self.logger = logging.getLogger(self.__class__.__name__)  
+        # 加载权重  
+        ckpt = torch.load(ckpt_path, map_location='cpu')  
+        model.load_state_dict(ckpt)  
+        
+        # 设备配置  
+        model = model.to(self.main_device)  
+        if len(self.device_ids) > 1:  
+            model = torch.nn.DataParallel(model, device_ids=self.device_ids)  
+        model.eval()  
+        
+        return model, preprocess 
+
 
     def _validate_devices(self):  
         """设备配置验证"""  
@@ -60,32 +71,11 @@ class BaseCLIPClassifier(ABC):
             return f"cuda:{self.device_ids[0]}"  
         return "cuda:0" if torch.cuda.is_available() else "cpu"  
     
-    def train(self, train_loader, val_loader=None, **kwargs):
-        """训练模板方法"""
-        self.logger.info("Training started")
-        try:
-            # 通用预处理
-            features, labels = self._prepare_data(train_loader)
-            
-            # 子类具体训练
-            self._train_impl(features, labels, **kwargs)
-            
-            # 验证流程
-            if val_loader:
-                self.logger.info("Running validation")
-                results = self.evaluate(val_loader)
-                self.logger.info(f"Validation scores: {results}")
-                
-        except Exception as e:
-            self.logger.error(f"Training failed: {str(e)}")
-            raise
-
-    def evaluate(self, data_loader) -> dict:
-        """评估模板方法"""
-        self.logger.info("Evaluation started")
-        y_true, y_pred = self._get_predictions(data_loader)
-        return self._calc_metrics(y_true, y_pred)
-
+    def extract_features(self, data_loader) -> np.ndarray:  
+        """通用特征提取方法"""  
+        features, _ = self._prepare_data(data_loader)  
+        return features 
+    
     def classify_images(self, folder_path: str, output_csv: str):
         """批量分类模板方法"""
         results = []
@@ -97,11 +87,6 @@ class BaseCLIPClassifier(ABC):
                 self._handle_error(img_path, e)
         self._save_results(results, output_csv)
 
-    @abstractmethod
-    def _train_impl(self, features: np.ndarray, labels: np.ndarray, **kwargs): ...
-
-    @abstractmethod
-    def _get_predictions(self, data_loader) -> tuple: ...
 
     # 以下为通用实现
     def _prepare_data(self, loader):
@@ -115,10 +100,17 @@ class BaseCLIPClassifier(ABC):
     def _get_features(self, images):
         """获取图像特征"""
         images = images.to(self.main_device)  
-        with torch.no_grad(), torch.cuda.amp.autocast(enabled='cuda' in self.main_device):  
-            features = self.model.encode_image(images)
-        return (features / features.norm(dim=-1, keepdim=True)).cpu().numpy()
 
+        # 特征提取  
+        with torch.no_grad(), torch.cuda.amp.autocast(enabled='cuda' in self.main_device):  
+            # 处理DataParallel封装  
+            model = self.model.module if hasattr(self.model, 'module') else self.model  
+            features = model.encode_image(images)  # 从实际模型获取特征  
+        
+        # 特征归一化处理  
+        features = features / features.norm(dim=-1, keepdim=True)  
+        return features.cpu().numpy().astype(np.float32)  # 统一返回float32  
+    
     def _calc_metrics(self, y_true, y_pred):
         """计算评估指标"""
         threshold = 0.5  
@@ -141,9 +133,6 @@ class BaseCLIPClassifier(ABC):
         features = self._get_features(tensor)
         return self._format_prediction(features)
 
-    @abstractmethod
-    def _format_prediction(self, features): ...
-
     def _save_results(self, results, output_path):
         """保存结果"""
         pd.DataFrame(results).to_csv(output_path, index=False)
@@ -152,3 +141,19 @@ class BaseCLIPClassifier(ABC):
     def _handle_error(self, img_path, error):
         """错误处理（可重写）"""
         self.logger.error(f"Error processing {img_path}: {str(error)}")
+
+        
+    @abstractmethod
+    def _format_prediction(self, features: np.ndarray) -> dict:  
+        """预测结果格式化方法（子类必须实现）"""  
+        pass  
+
+    @abstractmethod  
+    def train(self, train_loader, **kwargs):  
+        """训练入口（子类必须实现）"""  
+        pass  
+
+    @abstractmethod  
+    def evaluate(self, data_loader) -> dict:  
+        """评估入口（子类必须实现）"""  
+        pass  
