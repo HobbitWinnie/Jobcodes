@@ -1,34 +1,43 @@
-import torch  
-from core.base import BaseCLIPClassifier  
+import torch
+from typing import List, Dict, Any
+from ..core.base import BaseCLIPClassifier
 
-class ZeroShot(BaseCLIPClassifier):  
-    def __init__(self, *args, labels=None, **kwargs):  
-        super().__init__(*args, **kwargs)  
-        self.labels = labels or []  
-        self._prepare_text_features()  
+class ZeroShotClassifier(BaseCLIPClassifier):
+    def __init__(self, *args, labels=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.labels = labels or []
+        self.text_features = None
+        self._prepare_text_features()
 
-    def _prepare_text_features(self):  
-        """预计算文本特征"""  
-        if not self.labels:  
-            raise ValueError("必须提供标签列表")  
-            
-        self.text_features = self._get_text_features(self.labels)  
-        self.text_features = self.text_features.to(torch.float32)  
+    def _prepare_text_features(self):
+        if not self.labels:
+            raise ValueError("必须提供标签列表")
+        self.text_features = self._get_text_features(self.labels).to(torch.float32)
 
-    def classify_image(self, image):  
-        """零样本分类"""  
-        if not self.labels:  
-            raise RuntimeError("未设置分类标签")  
-            
-        # 预处理和特征提取  
-        img_tensor = self.preprocess_func(image).unsqueeze(0)  
-        img_features = self._get_image_features(img_tensor)  
+    def train(self, train_loader=None, **kwargs):
+        self._prepare_text_features()
+
+    def evaluate(self, data_loader) -> Dict:
+        correct, total = 0, 0
+        for img_batch, label_batch in data_loader:
+            for img, gt in zip(img_batch, label_batch):
+                pred = self._predict_single(img)
+                if pred['label'] == gt:
+                    correct += 1
+                total += 1
+        acc = correct / total if total else 0
+        return {'accuracy': acc}
+
+    def _predict_single(self, img_path: str) -> Dict[str, Any]:
+        if not self.labels:
+            raise RuntimeError("未设置分类标签")
+        image = self._load_image(img_path)
         
-        # 计算相似度  
-        similarity = (100.0 * img_features @ self.text_features.T).softmax(dim=-1)  
-        probs, indices = similarity.topk(3)  
-        
-        return [  
-            (self.labels[i.item()], p.item())   
-            for p, i in zip(probs[0], indices[0])  
-        ]  
+        img_tensor = self.preprocess_func(image).unsqueeze(0)
+        img_features = self._get_image_features(img_tensor)
+        similarity = (100.0 * img_features @ self.text_features.T).softmax(dim=-1)
+        probs, indices = similarity.topk(3)
+        return {
+            'label': self.labels[indices[0][0].item()],
+            'top3': [(self.labels[i.item()], float(p)) for p, i in zip(probs[0], indices[0])]
+        }

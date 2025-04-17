@@ -1,53 +1,53 @@
-import numpy as np  
-from sklearn.svm import SVC  
-from core.base import BaseCLIPClassifier  
+import numpy as np
+import torch
+from sklearn.svm import SVC
+from typing import Dict, Any
+from ..core.base import BaseCLIPClassifier
 
-class SVM(BaseCLIPClassifier):  
-    def __init__(self, *args, C=1.0, kernel='linear', **kwargs):  
-        super().__init__(*args, **kwargs)  
-        self.svm = None  
-        self.classes = []  
-        self.label_to_index = {}  
-        self.C = C  
-        self.kernel = kernel  
+class SVMClassifier(BaseCLIPClassifier):
+    def __init__(self, *args, C=1.0, kernel='linear', **kwargs):
+        super().__init__(*args, **kwargs)
+        self.C = C
+        self.kernel = kernel
+        self.svm = None
+        self.classes = []
+        self.label_to_index = {}
 
-    def fit(self, dataloader):  
-        """训练SVM分类器"""  
-        features, labels = [], []  
-        
-        for batch in dataloader:  
-            img_batch, label_batch = batch[0], batch[1]  
-            feat = self._get_image_features(img_batch).cpu().numpy()  
-            features.append(feat)  
-            labels.extend(label_batch)  
-        
-        self.classes = sorted(set(labels))  
-        self.label_to_index = {l: i for i, l in enumerate(self.classes)}  
-        
-        X = np.vstack(features)  
-        y = np.array([self.label_to_index[l] for l in labels])  
-        
-        self.svm = SVC(  
-            C=self.C,   
-            kernel=self.kernel,  
-            probability=True  
-        )  
-        self.svm.fit(X, y)  
+    def train(self, dataloader, **kwargs):
+        features, labels = [], []
+        for img_batch, label_batch in dataloader:
+            feat = self._get_image_features(img_batch).cpu().numpy()
+            features.append(feat)
+            labels.extend(label_batch)
 
-    def classify_image(self, image):  
-        """实现图像分类"""  
-        if not self.svm:  
-            raise RuntimeError("Classifier not trained")  
-            
-        # 预处理和特征提取  
-        img_tensor = self.preprocess_func(image).unsqueeze(0)  
-        features = self._get_image_features(img_tensor).cpu().numpy()  
+        self.classes = sorted(set(labels))
+        self.label_to_index = {l: i for i, l in enumerate(self.classes)}
+        X = np.vstack(features)
+        y = np.array([self.label_to_index[l] for l in labels])
+        self.svm = SVC(C=self.C, kernel=self.kernel, probability=True)
+        self.svm.fit(X, y)
+
+    def evaluate(self, data_loader) -> Dict:
+        correct, total = 0, 0
+        for img_batch, label_batch in data_loader:
+            for img, gt in zip(img_batch, label_batch):
+                pred = self._predict_single(img)
+                if pred['label'] == gt:
+                    correct += 1
+                total += 1
+        acc = correct / total if total else 0
+        return {'accuracy': acc}
+
+    def _predict_single(self, img_path: str) -> Dict[str, Any]:
+        if self.svm is None:
+            raise RuntimeError("Classifier not trained")
+        image = self._load_image(img_path)
         
-        # 预测概率  
-        probabilities = self.svm.predict_proba(features)[0]  
-        sorted_indices = np.argsort(probabilities)[::-1][:3]  
-        
-        return [  
-            (self.classes[i], probabilities[i])   
-            for i in sorted_indices  
-        ]  
+        img_tensor = self.preprocess_func(image).unsqueeze(0)
+        features = self._get_image_features(img_tensor).cpu().numpy()
+        probs = self.svm.predict_proba(features)[0]
+        sorted_indices = np.argsort(probs)[::-1][:3]
+        return {
+            'label': self.classes[sorted_indices[0]],
+            'top3': [(self.classes[i], float(probs[i])) for i in sorted_indices]
+        }

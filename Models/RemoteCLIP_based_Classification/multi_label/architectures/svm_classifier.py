@@ -26,7 +26,7 @@ class RankSVMClassifier(BaseCLIPClassifier):
         self.model.float()
         self.model.half = lambda: self.model  # 禁用半精度
 
-    def train(self, train_loader, **kwargs):
+    def train(self, train_loader, val_loader=None, **kwargs):
         features, labels = self._prepare_data(train_loader)
 
         # 检查和处理标签与特征
@@ -44,6 +44,12 @@ class RankSVMClassifier(BaseCLIPClassifier):
         # 训练分类器
         self.classifier.fit(scaled_features, labels)
         self.logger.info("RankSVM(SGD) 训练完毕")
+
+        # 验证逻辑  
+        if val_loader:  
+            metrics = self.evaluate(val_loader)
+            self.logger.info(f"Test F1: {metrics['f1']:.4f}") 
+
 
     def evaluate(self, data_loader) -> dict:
         y_true, y_pred = self._get_predictions(data_loader)

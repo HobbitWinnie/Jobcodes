@@ -40,5 +40,3 @@ class WHURS19Dataset(Dataset):
             image = torch.from_numpy(image).float() 
         
         return image, label, image_path
-
-        # return processed_image, label, image, image_path #这一行是few-shot加载support dataset时修改的

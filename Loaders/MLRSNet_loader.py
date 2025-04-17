@@ -48,12 +48,12 @@ def load_MLRSNet_data(images_dir, labels_dir):
             for _, row in label_data.iterrows():  
                 image_name = row.iloc[0]  
                 labels = row.iloc[1:].values.astype('float')  
-                image_path = os.path.join(image_folder, image_name)  
+                image_path = os.path.join(images_dir, image_name)  
                 
                 if os.path.exists(image_path):  
                     data.append((image_path, labels))  
                 else:  
-                    print(f"Warning: Image {image_name} not found in {image_folder}")      
+                    print(f"Warning: Image {image_name} not found in {images_dir}")      
     return data  
 
 

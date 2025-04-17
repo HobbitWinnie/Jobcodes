@@ -22,7 +22,7 @@ class MLKNNClassifier(BaseCLIPClassifier):
         self.model.float()  
         self.model.half = lambda: self.model  # 禁用半精度  
 
-    def train(self, train_loader, **kwargs):  
+    def train(self, train_loader, val_loader=None, **kwargs):  
         """训练实现（覆盖基类抽象方法）"""  
         # 准备数据（使用基类方法）  
         features, labels = self._prepare_data(train_loader)  
@@ -34,6 +34,11 @@ class MLKNNClassifier(BaseCLIPClassifier):
         # 训练分类器  
         self.classifier.fit(features, labels)  
         self.logger.info(f"MLKNN trained with {self.n_neighbors} neighbors")  
+
+        # 验证逻辑  
+        if val_loader:  
+            metrics = self.evaluate(val_loader)
+            self.logger.info(f"Test F1: {metrics['f1']:.4f}") 
 
     def evaluate(self, data_loader) -> dict:  
         """评估实现（覆盖基类抽象方法）"""  

@@ -67,8 +67,7 @@ class FCClassifier(BaseCLIPClassifier):
                 log_msg = f"Epoch {epoch+1} | Loss: {loss.item():.4f}"  
                 # 验证逻辑  
                 if val_loader:  
-                    val_labels, val_preds = self._get_predictions(val_loader)  
-                    metrics = self._calc_metrics(val_labels, val_preds)  
+                    metrics = self.evaluate(val_loader)
                     log_msg += f" | Val F1: {metrics['f1']:.4f}"  
                 self.logger.info(log_msg)  
 
