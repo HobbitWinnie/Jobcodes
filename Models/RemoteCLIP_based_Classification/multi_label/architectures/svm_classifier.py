@@ -25,6 +25,9 @@ class RankSVMClassifier(BaseCLIPClassifier):
         )
         self.model.float()
         self.model.half = lambda: self.model  # 禁用半精度
+        
+        if len(self.device_ids) > 1:  
+            self.classifier = torch.nn.DataParallel(self.classifier, device_ids=self.device_ids)  
 
     def train(self, train_loader, val_loader=None, **kwargs):
         features, labels = self._prepare_data(train_loader)

@@ -71,11 +71,6 @@ class BaseCLIPClassifier(ABC):
             return f"cuda:{self.device_ids[0]}"  
         return "cuda:0" if torch.cuda.is_available() else "cpu"  
     
-    def extract_features(self, data_loader) -> np.ndarray:  
-        """通用特征提取方法"""  
-        features, _ = self._prepare_data(data_loader)  
-        return features 
-    
     def classify_images(self, folder_path: str, output_csv: str):
         """批量分类模板方法"""
         results = []
@@ -86,17 +81,24 @@ class BaseCLIPClassifier(ABC):
             except Exception as e:
                 self._handle_error(img_path, e)
         self._save_results(results, output_csv)
-
-
-    # 以下为通用实现
-    def _prepare_data(self, loader):
-        """准备训练数据"""
+    
+    def _extract_feature_label_tensors(self, data_loader):
+        """特征及标签整合为Tensor，用于FC训练"""
         features, labels = [], []
-        for images, batch_labels in loader:
-            features.append(self._get_features(images))
-            labels.append(batch_labels.numpy())
-        return np.vstack(features), np.concatenate(labels)
-
+        self.model.eval()  # 主干进入评估模式
+        for batch_imgs, batch_labels in data_loader:
+            batch_imgs = batch_imgs.to(self.main_device)
+            with torch.no_grad(), torch.cuda.amp.autocast(enabled=self.main_device.startswith('cuda')):
+                # torch.nn.DataParallel: model自动均分到多卡
+                model = self.model.module if hasattr(self.model, 'module') else self.model
+                feats = model.encode_image(batch_imgs)
+                feats = feats / feats.norm(dim=-1, keepdim=True)
+            features.append(feats.cpu())
+            labels.append(batch_labels.cpu())
+        features = torch.cat(features, dim=0)  # [N, D]
+        labels = torch.cat(labels, dim=0)      # [N, C]
+        return features, labels
+    
     def _get_features(self, images):
         """获取图像特征"""
         images = images.to(self.main_device)  

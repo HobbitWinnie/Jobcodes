@@ -16,8 +16,11 @@ class MLKNNClassifier(BaseCLIPClassifier):
         """  
         super().__init__(ckpt_path, **kwargs)  
         self.n_neighbors = n_neighbors  
-        self.classifier = MLkNN(k=n_neighbors)  
-        
+
+        self.classifier = MLkNN(k=n_neighbors)         
+        if len(self.device_ids) > 1:  
+            self.classifier = torch.nn.DataParallel(self.classifier, device_ids=self.device_ids)  
+
         # 强制模型保持FP32精度  
         self.model.float()  
         self.model.half = lambda: self.model  # 禁用半精度  
