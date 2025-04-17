@@ -8,7 +8,6 @@ from torch.utils.data import DataLoader
 from sklearn.model_selection import train_test_split  
 from Models.RemoteCLIP_based_Classification.multi_label.factory import ClassifierFactory
 from Loaders.MLRSNet_loader  import MLRSNetDataset
-
 from utils.set_logging import setup_logging
 
 def get_augmentation_transforms():  
@@ -90,4 +89,4 @@ if __name__ == "__main__":
     print(f"Test F1: {metrics['f1']:.4f}") 
 
     # 批量分类  
-    classifier.classify_images('input_images', 'predictions.csv')  
+    # classifier.classify_images('input_images', 'predictions.csv')  
