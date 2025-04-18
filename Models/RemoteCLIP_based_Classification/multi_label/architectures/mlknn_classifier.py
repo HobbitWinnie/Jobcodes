@@ -31,7 +31,7 @@ class MLKNNClassifier(BaseCLIPClassifier):
 
         if val_loader is not None:  
             metrics = self.evaluate(val_loader)  
-            self.logger.info(f"Val metrics: F1 = {metrics['f1']:.4f}, F2 = {metrics['f2']:.4f}")  
+            self.logger.info(f"Val metrics: F1 = {metrics[0]:.4f}, F2 = {metrics[1]:.4f}")  
 
     def evaluate(self, data_loader) -> dict:  
         """提取特征后评价MLKNN"""  
@@ -58,7 +58,7 @@ class MLKNNClassifier(BaseCLIPClassifier):
         preds = self.classifier.predict(features).toarray()           # shape: (n_samples, n_labels)  
         return labels, preds  
 
-    def _format_prediction(self, image: "PIL.Image.Image") -> dict:  
+    def _format_prediction(self, image) -> dict:  
         """兼容predict_single调用/图片输入的预测"""  
         # 1. 预处理图片  
         img_tensor = self.preprocess_func(image).unsqueeze(0).to(self.main_device)  

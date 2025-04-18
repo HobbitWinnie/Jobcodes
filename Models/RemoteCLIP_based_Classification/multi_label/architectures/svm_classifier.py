@@ -46,7 +46,7 @@ class RankSVMClassifier(BaseCLIPClassifier):
 
         if val_loader is not None:  
             metrics = self.evaluate(val_loader)  
-            self.logger.info(f"Val F1: {metrics['f1']:.4f}, F2: {metrics['f2']:.4f}")  
+            self.logger.info(f"Val F1: {metrics[0]:.4f}, F2: {metrics[1]:.4f}")  
 
     def evaluate(self, data_loader) -> dict:  
         y_true, y_pred = self._get_predictions(data_loader)  

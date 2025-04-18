@@ -32,10 +32,10 @@ if __name__ == "__main__":
     # 初始化模型  
     num_labels = 17
     classifier = ClassifierFactory.create(  
-        classifier_type='mlknn',  
+        classifier_type='fc',  
         ckpt_path=checkpoint_path,  
         num_labels=num_labels,
-        device_ids=[1,2]
+        device_ids=[2,3]
     )  
 
     # 创建训练和测试数据集  

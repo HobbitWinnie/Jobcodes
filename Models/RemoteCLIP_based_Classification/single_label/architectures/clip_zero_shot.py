@@ -14,8 +14,12 @@ class ZeroShotClassifier(BaseCLIPClassifier):
             raise ValueError("必须提供标签列表")
         self.text_features = self._get_text_features(self.labels).to(torch.float32)
 
-    def train(self, train_loader=None, **kwargs):
+    def train(self, train_loader=None, val_loader=None, **kwargs):
         self._prepare_text_features()
+        
+        if val_loader is not None:
+            acc = self.evaluate(val_loader)
+            self.logger.info(f'Val acc: {acc['accuracy']}')
 
     def evaluate(self, data_loader) -> Dict:
         correct, total = 0, 0

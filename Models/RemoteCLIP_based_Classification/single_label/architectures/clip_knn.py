@@ -12,18 +12,24 @@ class KNNClassifier(BaseCLIPClassifier):
         self.classes = []
         self.label_to_index = {}
 
-    def train(self, dataloader, **kwargs):
+    def train(self, train_loader, val_loader=None, **kwargs):
         features, labels = [], []
-        for img_batch, label_batch in dataloader:
+        for img_batch, label_batch in train_loader:
             feat = self._get_image_features(img_batch).cpu().numpy()
             features.append(feat)
             labels.extend(label_batch)
+        
         self.classes = sorted(set(labels))
         self.label_to_index = {l: i for i, l in enumerate(self.classes)}
+
         X = np.vstack(features)
         y = np.array([self.label_to_index[l] for l in labels])
         self.knn = KNeighborsClassifier(n_neighbors=self.n_neighbors)
         self.knn.fit(X, y)
+
+        if val_loader is not None:
+            acc = self.evaluate(val_loader)
+            self.logger.info(f'Val acc: {acc['accuracy']}')
 
     def evaluate(self, data_loader) -> Dict:
         correct, total = 0, 0

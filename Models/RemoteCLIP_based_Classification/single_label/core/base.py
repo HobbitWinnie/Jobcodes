@@ -29,9 +29,11 @@ class BaseCLIPClassifier(ABC):
         self.logger.info(f"Main device: {self.main_device}")  
 
         # 模型初始化  
-        self.model, self.preprocess_func = self._init_clip_model(model_name, ckpt_path)  
+        self.clip_model, self.preprocess_func = self._init_clip_model(model_name, ckpt_path)  
         self.logger.info(f"Loaded {model_name} from {ckpt_path}")  
-
+        
+        # DataParallel兼容
+        self.clip_model = self.clip_model.module if hasattr(self.clip_model, 'module') else self.clip_model  
 
     def _init_clip_model(self, model_name: str, ckpt_path: str) -> tuple:  
         """初始化CLIP模型核心方法"""  
@@ -79,7 +81,7 @@ class BaseCLIPClassifier(ABC):
         try:  
             images = images.to(self.main_device)  
             with torch.no_grad(), torch.cuda.amp.autocast(enabled=("cuda" in self.main_device)):  
-                features = self.model.encode_image(images)  
+                features = self.clip_model.encode_image(images)  
             return features / features.norm(dim=-1, keepdim=True)  
             
         except RuntimeError as e:  
@@ -96,7 +98,7 @@ class BaseCLIPClassifier(ABC):
         try:  
             tokenized = self.tokenizer(texts).to(self.main_device)  
             with torch.no_grad():  
-                features = self.model.encode_text(tokenized)  
+                features = self.clip_model.encode_text(tokenized)  
             return features / features.norm(dim=-1, keepdim=True)  
             
         except Exception as e:  
