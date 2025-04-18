@@ -15,12 +15,7 @@ class BaseCLIPClassifier(ABC):
     def __init__(self, ckpt_path: str,   
                  model_name: str = 'ViT-L-14',  
                  device_ids: list = None):  
-        """  
-        Args:  
-            ckpt_path: CLIP模型权重路径  
-            model_name: CLIP模型名称  
-            device_ids: 使用的GPU设备ID列表（空列表时自动选择可用设备）  
-        """ 
+
         # 初始化日志  
         self.logger = logging.getLogger(self.__class__.__name__)  
         
@@ -31,9 +26,8 @@ class BaseCLIPClassifier(ABC):
         self.logger.info(f"Main device: {self.main_device}")  
 
         # 模型初始化  
-        self.model, self.preprocess_func = self._init_clip_model(model_name, ckpt_path)  
+        self.clip_model, self.preprocess_func = self._init_clip_model(model_name, ckpt_path)  
         self.logger.info(f"Loaded {model_name} from {ckpt_path}")  
-
 
     def _init_clip_model(self, model_name: str, ckpt_path: str) -> tuple:  
         """初始化CLIP模型核心方法"""  
@@ -42,16 +36,15 @@ class BaseCLIPClassifier(ABC):
         
         # 加载权重  
         ckpt = torch.load(ckpt_path, map_location='cpu')  
-        model.load_state_dict(ckpt)  
+        model.load_state_dict(ckpt)   
+        model.eval()  
         
         # 设备配置  
         model = model.to(self.main_device)  
         if len(self.device_ids) > 1:  
             model = torch.nn.DataParallel(model, device_ids=self.device_ids)  
-        model.eval()  
-        
-        return model, preprocess 
 
+        return model, preprocess 
 
     def _validate_devices(self):  
         """设备配置验证"""  
@@ -71,6 +64,7 @@ class BaseCLIPClassifier(ABC):
             return f"cuda:{self.device_ids[0]}"  
         return "cuda:0" if torch.cuda.is_available() else "cpu"  
     
+    
     def classify_images(self, folder_path: str, output_csv: str):
         """批量分类模板方法"""
         results = []
@@ -81,47 +75,14 @@ class BaseCLIPClassifier(ABC):
             except Exception as e:
                 self._handle_error(img_path, e)
         self._save_results(results, output_csv)
-    
-    def _extract_feature_label_tensors(self, data_loader):
-        """特征及标签整合为Tensor，用于FC训练"""
-        features, labels = [], []
-        self.model.eval()  # 主干进入评估模式
-        for batch_imgs, batch_labels in data_loader:
-            batch_imgs = batch_imgs.to(self.main_device)
-            with torch.no_grad(), torch.cuda.amp.autocast(enabled=self.main_device.startswith('cuda')):
-                # torch.nn.DataParallel: model自动均分到多卡
-                model = self.model.module if hasattr(self.model, 'module') else self.model
-                feats = model.encode_image(batch_imgs)
-                feats = feats / feats.norm(dim=-1, keepdim=True)
-            features.append(feats.cpu())
-            labels.append(batch_labels.cpu())
-        features = torch.cat(features, dim=0)  # [N, D]
-        labels = torch.cat(labels, dim=0)      # [N, C]
-        return features, labels
-    
-    def _get_features(self, images):
-        """获取图像特征"""
-        images = images.to(self.main_device)  
 
-        # 特征提取  
-        with torch.no_grad(), torch.cuda.amp.autocast(enabled='cuda' in self.main_device):  
-            # 处理DataParallel封装  
-            model = self.model.module if hasattr(self.model, 'module') else self.model  
-            features = model.encode_image(images)  # 从实际模型获取特征  
-        
-        # 特征归一化处理  
-        features = features / features.norm(dim=-1, keepdim=True)  
-        return features.cpu().numpy().astype(np.float32)  # 统一返回float32  
-    
-    def _calc_metrics(self, y_true, y_pred):
-        """计算评估指标"""
-        threshold = 0.5  
+    def _calc_metrics(self, y_true, y_pred, threshold = 0.5):
+        """计算评估指标"""          
         y_pred_bin = (y_pred > threshold).astype(int)  
-        return {
-            'f1': f1_score(y_true, y_pred_bin, average='macro', zero_division=1),
-            'f2': fbeta_score(y_true, y_pred_bin, beta=2, average='macro', zero_division=1)
-        }
-
+        f1 = f1_score(y_true, y_pred_bin, average='macro', zero_division=1)  
+        f2 = fbeta_score(y_true, y_pred_bin, beta=2, average='macro', zero_division=1)  
+        return f1, f2
+    
     def _iter_images(self, folder_path):
         """迭代有效图像文件"""
         for fname in os.listdir(folder_path):
@@ -131,9 +92,7 @@ class BaseCLIPClassifier(ABC):
     def _predict_single(self, img_path):
         """单图预测流程"""
         image = Image.open(img_path).convert('RGB')
-        tensor = self.preprocess_func(image).unsqueeze(0)
-        features = self._get_features(tensor)
-        return self._format_prediction(features)
+        return self._format_prediction(image)
 
     def _save_results(self, results, output_path):
         """保存结果"""
