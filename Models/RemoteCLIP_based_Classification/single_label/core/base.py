@@ -16,9 +16,10 @@ class BaseCLIPClassifier(ABC):
             self, 
             ckpt_path: Path,
             model_name: str ='ViT-L-14', 
+            labels= None,
             device_ids: list = None
         ):  
-        
+
         # 初始化日志  
         self.logger = logging.getLogger(self.__class__.__name__)  
 
