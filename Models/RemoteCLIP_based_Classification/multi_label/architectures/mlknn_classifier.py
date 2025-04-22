@@ -20,7 +20,7 @@ class MLKNNClassifier(BaseCLIPClassifier):
         self.classifier = MLkNN(k=n_neighbors)  # 仅CPU实现  
         self.clip_model = self.clip_model.module if hasattr(self.clip_model, 'module') else self.clip_model  
 
-    def train(self, train_loader, val_loader=None, **kwargs):  
+    def train(self, train_loader, val_loader=None):  
         """提取全部特征并训练MLKNN"""  
         self.logger.info("Extracting features for MLKNN training...")  
         features, labels = self._prepare_features_labels(train_loader)  
