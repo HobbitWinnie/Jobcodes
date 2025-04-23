@@ -16,12 +16,12 @@ class ZeroShotClassifier(BaseCLIPClassifier):
         self._prepare_text_features()  
         if val_loader is not None:  
             acc = self.evaluate(val_loader)  
-            self.logger.info(f'Validation accuracy: {acc['accuracy']:.4f}')  
+            self.logger.info(f"Validation accuracy: {acc['accuracy']:.4f}")  
 
     def evaluate(self, data_loader):  
         correct, total = 0, 0  
-        for img_batch, label_batch in data_loader:  
-            img_features = self._get_image_features(img_batch)  
+        for img_batch, label_batch, _ in data_loader:  
+            img_features = self._get_image_features(img_batch).float()   
             similarity = (100.0 * img_features @ self.text_features.T).softmax(dim=-1)  
             pred_indices = similarity.argmax(dim=-1).cpu().numpy()  
             pred_labels = [self.labels[i] for i in pred_indices]  
@@ -36,7 +36,7 @@ class ZeroShotClassifier(BaseCLIPClassifier):
             raise RuntimeError("未设置分类标签")  
         image = self._load_image(img_path_or_image) if isinstance(img_path_or_image, str) else img_path_or_image  
         img_tensor = self.preprocess_func(image).unsqueeze(0)  
-        img_features = self._get_image_features(img_tensor)  
+        img_features = self._get_image_features(img_tensor).float()  
         similarity = (100.0 * img_features @ self.text_features.T).softmax(dim=-1)  
         probs, indices = similarity.topk(3)  
         return {  

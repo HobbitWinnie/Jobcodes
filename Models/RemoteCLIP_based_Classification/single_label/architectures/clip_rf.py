@@ -1,7 +1,5 @@
 import numpy as np
-import torch
 from sklearn.ensemble import RandomForestClassifier
-from typing import Dict, Any
 from ..core.base import BaseCLIPClassifier
 
 class RFClassifier(BaseCLIPClassifier):  
@@ -14,12 +12,14 @@ class RFClassifier(BaseCLIPClassifier):
         )  
 
     def _fit_classifier(self, features, targets):  
+        self.logger.info(f'{self.__class__.__name__} classifier training begin')
         self.rf.fit(features, targets)  
+        self.logger.info(f'{self.__class__.__name__} classifier training completed')
 
     def _predict_batch(self, features):  
         return self.rf.predict(features)  
 
-    def _predict_single(self, img_path: str) -> Dict[str, Any]:  
+    def _predict_single(self, img_path: str):  
         if self.rf is None:  
             raise RuntimeError("RandomForest尚未训练")  
         image = self._load_image(img_path)  

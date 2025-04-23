@@ -1,6 +1,5 @@
 import numpy as np
 from sklearn.svm import SVC
-from typing import Dict, Any
 from ..core.base import BaseCLIPClassifier
 
 class SVMClassifier(BaseCLIPClassifier):  
@@ -9,12 +8,14 @@ class SVMClassifier(BaseCLIPClassifier):
         self.svm = SVC(C=C, kernel=kernel, probability=True)  
 
     def _fit_classifier(self, features, targets):  
+        self.logger.info(f'{self.__class__.__name__} classifier training begin')
         self.svm.fit(features, targets)  
+        self.logger.info(f'{self.__class__.__name__} classifier training completed')
 
     def _predict_batch(self, features):  
         return self.svm.predict(features)  
 
-    def _predict_single(self, img_path: str) -> Dict[str, Any]:  
+    def _predict_single(self, img_path: str):  
         if self.svm is None:  
             raise RuntimeError("SVM尚未训练")  
         image = self._load_image(img_path)  
