@@ -39,7 +39,7 @@ if __name__ == "__main__":
     
     # 数据
     DATA_ROOT_DIR = '/home/Dataset/nw'
-    train_dataset = 'Classification/WHU-RS19'
+    train_dataset = 'Classification/WHU-RS19' 
     train_data_path = os.path.join(DATA_ROOT_DIR, train_dataset)
 
     # few-shot classification parameters
