@@ -3,7 +3,7 @@ import torch.nn as nn
 import open_clip  
 import traceback  
 
-class BaseCLIPSegmentation(nn.Module):  
+class BaseRemoteCLIPSeg(nn.Module):  
     def __init__(self, model_name, num_classes, input_size=224, ckpt_path=None, freeze_clip=True, in_channels=4):  
         super().__init__()  
         self.model_name = model_name  
@@ -16,8 +16,8 @@ class BaseCLIPSegmentation(nn.Module):
 
     def _init_clip_model(self, ckpt_path=None, freeze_clip=True):  
         try:  
-            model, _, _ = open_clip.create_model_and_transforms(self.model_name, pretrained='openai')  
-            assert (model is not None) and (model.visual is not None), "CLIP模型加载失败"  
+            model, _, _ = open_clip.create_model_and_transforms(self.model_name)  
+            assert (model is not None) and (model.visual is not None), "CLIP模型加 载失败"  
             self.visual_encoder = model.visual.to(self.device)  
             self.visual_encoder.eval()  
 
@@ -47,6 +47,7 @@ class BaseCLIPSegmentation(nn.Module):
                 if isinstance(ckpt, dict) and 'state_dict' in ckpt:  
                     ckpt = ckpt['state_dict']  
                 self.load_state_dict(ckpt, strict=False)  
+        
         except Exception as e:  
             print(f"CLIP模型加载失败: {e}")  
             traceback.print_exc()  

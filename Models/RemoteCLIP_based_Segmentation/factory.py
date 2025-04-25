@@ -1,16 +1,36 @@
+import inspect  
 from .architectures.clip_vit_seg import CLIPVITSegmentation  
-from .architectures.seg_rn50 import CLIPResNetSegmentation
-from .architectures.seg_rn50_unet import UNetWithCLIP
-from .architectures.seg_vit import CLIPSegmentation  
+from .architectures.reclip_rn50_seg import ReCLIPResNetSeg
+from .architectures.reclip_rn50_unet_seg import UNetWithReCLIPResNet
+from .architectures.reclip_vit_seg import ReCLIPViTSeg  
 
-def create_clip_segmentation(model_type, model_name, num_classes=9, input_size=224, ckpt_path=None, freeze_clip=True):  
-    """  
-    工厂方法，根据类型返回CLIP分割模型实例。  
-    model_type: 'vit' 或 'resnet'  
-    """  
-    if model_type.lower() == 'vit':  
-        return CLIPVITSegmentation(model_name, num_classes, input_size, ckpt_path, freeze_clip)  
-    elif model_type.lower() == 'resnet':  
-        return CLIPResNetSegmentation(model_name, num_classes, input_size, ckpt_path, freeze_clip)  
-    else:  
-        raise ValueError(f"未知的model_type: {model_type}")  
+
+def segmentation_model_factory(model_type, **kwargs):  
+    model_mapping = {  
+        'CLIPVITSegmentation': CLIPVITSegmentation,  
+        'ReCLIPResNetSeg': ReCLIPResNetSeg,  
+        'UNetWithReCLIPResNet': UNetWithReCLIPResNet,  
+        'ReCLIPViTSeg': ReCLIPViTSeg,  
+    }  
+    if model_type not in model_mapping:  
+        raise ValueError(f"Unknown model type: {model_type}")  
+    
+    model_class = model_mapping[model_type]  
+    signature = inspect.signature(model_class.__init__)  
+    param_names = [  
+        k for k in signature.parameters.keys()  
+        if k != 'self'  
+    ]  
+    
+    filtered_kwargs = {k: v for k, v in kwargs.items() if k in param_names}  
+    
+    # 自动补充缺省参数  
+    for name, param in signature.parameters.items():  
+        if name == 'self':  
+            continue  
+        if name not in filtered_kwargs and param.default is not inspect.Parameter.empty:  
+            filtered_kwargs[name] = param.default  
+        elif name not in filtered_kwargs and param.default is inspect.Parameter.empty:  
+            raise TypeError(f'Missing required argument: {name}')  
+            
+    return model_class(**filtered_kwargs)  

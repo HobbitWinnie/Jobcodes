@@ -1,7 +1,7 @@
 import torch  
 import torch.nn as nn  
 import torch.nn.functional as F  
-from ..core.base import BaseCLIPSegmentation 
+from ..core.base import BaseRemoteCLIPSeg 
 
 class DoubleConv(nn.Module):  
     """双卷积块"""  
@@ -30,7 +30,7 @@ class DecoderBlock(nn.Module):
         self.dropout = nn.Dropout2d(dropout_rate)  
     
     def forward(self, x, skip=None):  
-        x = self.up(x)  
+        x = self.up(x)   
         if skip is not None:  
             # 与主干尺寸对齐  
             if x.shape[-2:] != skip.shape[-2:]:  
@@ -44,10 +44,25 @@ class DecoderBlock(nn.Module):
         x = self.dropout(x)  
         return self.conv(x)  
 
-class UNetWithCLIP(BaseCLIPSegmentation):  
-    def __init__(self, model_name, ckpt_path, num_classes, input_size=224,  
-                 dropout_rate=0.1, use_aux_loss=True, initial_features=64):  
-        super().__init__(model_name, num_classes, input_size, ckpt_path, freeze_clip=True, in_channels=3)  
+class UNetWithReCLIPResNet(BaseRemoteCLIPSeg):  
+    def __init__(
+            self, 
+            model_name, 
+            ckpt_path, 
+            num_classes, 
+            input_size=224,  
+            dropout_rate=0.1, 
+            use_aux_loss=True, 
+            initial_features=64
+    ):  
+        super().__init__(
+            model_name, 
+            num_classes, 
+            input_size, 
+            ckpt_path, 
+            freeze_clip=True, 
+            in_channels=3
+        )  
         self.use_aux_loss = use_aux_loss  
         self.input_size = input_size  
         

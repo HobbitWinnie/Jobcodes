@@ -1,10 +1,23 @@
 import torch.nn as nn  
 import torch.nn.functional as F  
-from ..core.base import BaseCLIPSegmentation  
+from ..core.base import BaseRemoteCLIPSeg  
 
-class CLIPResNetSegmentation(BaseCLIPSegmentation):  
-    def __init__(self, model_name, num_classes=9, input_size=224, ckpt_path=None, freeze_clip=True):  
-        super().__init__(model_name, num_classes, input_size, ckpt_path, freeze_clip)  
+class ReCLIPResNetSeg(BaseRemoteCLIPSeg):  
+    def __init__(
+            self, 
+            model_name, 
+            num_classes=9, 
+            input_size=224, 
+            ckpt_path=None, 
+            freeze_clip=True
+    ):  
+        super().__init__(
+            model_name, 
+            num_classes, 
+            input_size, 
+            ckpt_path, 
+            freeze_clip
+        )  
         out_c = self.visual_encoder.layer4[-1].conv3.out_channels  
         self.channel_adapter = nn.Sequential(  
             nn.Conv2d(32, 64, 1, bias=False),  

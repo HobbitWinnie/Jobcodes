@@ -1,5 +1,6 @@
-import sys
-sys.path.append('/home/nw/Codes/Methods/RemoteCLIP/Image_segementation')  
+import os  
+import sys  
+sys.path.append('/home/nw/Codes')  
 
 import torch
 import torch.optim as optim
@@ -11,14 +12,13 @@ import torch.nn as nn
 import gc  
 from torch.optim.lr_scheduler import CosineAnnealingWarmRestarts
 from pathlib import Path
-from datetime import datetime
 from torch.cuda.amp import GradScaler, autocast
-from data.dataset import create_dataloaders
-from nw.Codes.Models.RemoteCLIP_based_Segmentation.seg_rn50_unet_model import UNetWithCLIP
-from config import get_config
 from nw.Codes.Models.RemoteCLIP_based_Segmentation.modules.combined_loss import CombinedLoss
-from utils import setup_logging
 
+from data.dataset import create_dataloaders
+from config import get_config
+from utils.set_logging import setup_logging
+from Models.RemoteCLIP_based_Segmentation.factory import segmentation_model_factory
 
 def init_training(config):  
     """初始化训练组件"""  
@@ -32,25 +32,13 @@ def init_training(config):
         logging.info(f"当前GPU内存使用: {torch.cuda.memory_allocated(0) / 1024**2:.2f}MB")  
 
     # 创建实验目录  
-    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')  
-    exp_dir = Path(config['paths']['model']['save_dir']) / timestamp  
+    exp_dir = Path(config['paths']['model']['save_dir'])
     exp_dir.mkdir(parents=True, exist_ok=True)  
 
     # 设置日志  
-    setup_logging(exp_dir / 'training.log')  
+    setup_logging(exp_dir)  
     with open(exp_dir / 'config.json', 'w') as f:  
         json.dump(config.config, f, indent=4)  
-
-    # 初始化模型  
-    num_classes = config['dataset']['num_classes']  
-    model = UNetWithCLIP(  
-        model_name=config['model']['model_name'],  
-        ckpt_path=config['paths']['model']['clip_ckpt'],  
-        num_classes=num_classes,  
-        dropout_rate=0.2,  
-        use_aux_loss=True,  
-        initial_features=128  
-    ).to(device)  
 
     # 初始化优化器  
     optimizer = optim.AdamW(  
@@ -75,7 +63,7 @@ def init_training(config):
         ignore_index=config['training']['ignore_index']  
     ).to(device)  
 
-    return device, exp_dir, model, optimizer, scheduler, criterion  
+    return device, exp_dir, optimizer, scheduler, criterion  
 
 def validate_model(model, val_loader, criterion, device, num_classes):  
     """验证模型性能"""  
@@ -313,9 +301,24 @@ def main():
     try:
         # 加载配置
         config = get_config()
+        
+        """设置日志配置"""
+        setup_logging()
     
+        # 初始化模型  
+        model = segmentation_model_factory(
+            model_type='UNetWithReCLIPResNet',
+            model_name=config['model']['model_name'],  
+            ckpt_path=config['paths']['model']['clip_ckpt'],  
+            num_classes=config['dataset']['num_classes'],  
+            dropout_rate=0.2,  
+            use_aux_loss=True,  
+            initial_features=128,
+            device_ids=[2,3]
+        ) 
+
         # 初始化训练组件
-        device, exp_dir, model, optimizer, scheduler, criterion = init_training(config)
+        device, exp_dir, optimizer, scheduler, criterion = init_training(config)
 
         # 创建数据加载器
         train_loader, val_loader = create_dataloaders(
