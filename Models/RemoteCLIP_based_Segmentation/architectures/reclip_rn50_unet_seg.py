@@ -46,14 +46,16 @@ class DecoderBlock(nn.Module):
 
 class UNetWithReCLIPResNet(BaseRemoteCLIPSeg):  
     def __init__(
-            self, 
-            model_name, 
-            ckpt_path, 
-            num_classes, 
-            input_size=224,  
-            dropout_rate=0.1, 
-            use_aux_loss=True, 
-            initial_features=64
+        self, 
+        model_name, 
+        ckpt_path, 
+        num_classes, 
+        input_size=224,  
+        dropout_rate=0.1, 
+        use_aux_loss=True, 
+        initial_features=64,
+        in_channels=3,  
+        device_ids=None,  
     ):  
         super().__init__(
             model_name, 
@@ -61,12 +63,14 @@ class UNetWithReCLIPResNet(BaseRemoteCLIPSeg):
             input_size, 
             ckpt_path, 
             freeze_clip=True, 
-            in_channels=3
+            in_channels=in_channels,  
+            device_ids=device_ids,  
         )  
         self.use_aux_loss = use_aux_loss  
         self.input_size = input_size  
-        
-        # 获取各层输出通道配置  
+        self.main_device = self.main_device  # 统一命名  
+
+        # 获取每一层输出通道配置  
         encoder_layers = self._get_visual_encoder_layers()  
         # 用一组1x1卷积将主干输出统一至U-Net的维度  
         self.feature_transforms = nn.ModuleList([  
@@ -102,7 +106,7 @@ class UNetWithReCLIPResNet(BaseRemoteCLIPSeg):
     def _get_visual_encoder_layers(self):  
         # 获取视觉编码器每层名称与输出通道数  
         # 仅适配clip resnet主干  
-        ve = self.visual_encoder  
+        ve = self.encoder    
         return [  
             ('conv1', ve.conv1.out_channels),  
             ('layer1', ve.layer1[-1].conv3.out_channels),  
@@ -114,20 +118,21 @@ class UNetWithReCLIPResNet(BaseRemoteCLIPSeg):
     def extract_features(self, x):  
         # 按照resnet主干结构提特征  
         features = []  
-        x = x.to(self.device)  
+        x = x.to(self.main_device)  
+
         with torch.no_grad():  
-            self.visual_encoder.eval()  
-            x = self.visual_encoder.conv1(x)  # 224 -> 112  
-            x = self.visual_encoder.bn1(x)  
-            x = self.visual_encoder.act1(x)  
+            self.encoder.eval()  
+            x = self.encoder.conv1(x)  # 224 -> 112  
+            x = self.encoder.bn1(x)  
+            x = self.encoder.act1(x)  
             features.append(x)  
-            x = self.visual_encoder.layer1(x)  # 112 -> 112  
+            x = self.encoder.layer1(x)  # 112 -> 112  
             features.append(x)  
-            x = self.visual_encoder.layer2(x)  # 112 -> 56  
+            x = self.encoder.layer2(x)  # 112 -> 56  
             features.append(x)  
-            x = self.visual_encoder.layer3(x)  # 56 -> 28  
+            x = self.encoder.layer3(x)  # 56 -> 28  
             features.append(x)  
-            x = self.visual_encoder.layer4(x)  # 28 -> 14  
+            x = self.encoder.layer4(x)  # 28 -> 14  
             features.append(x)  
         return features  
 

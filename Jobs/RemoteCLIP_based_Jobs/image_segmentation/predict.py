@@ -15,18 +15,22 @@ from pathlib import Path
 from utils.set_logging import setup_logging
 from config import get_config
 from .data.dataset import load_and_save_data, split_image_into_patches, reconstruct_image_from_patches, CustomTransform
+from Models.RemoteCLIP_based_Segmentation.factory import segmentation_model_factory
 
 
 def load_model(config, checkpoint_path, device):
     """加载训练好的模型"""
-    model = UNetWithCLIP(
-        model_name=config['model']['model_name'],
-        ckpt_path=config['paths']['model']['clip_ckpt'],
-        num_classes=config['dataset']['num_classes'],
+    # 初始化模型  
+    model = segmentation_model_factory(
+        model_type='UNetWithReCLIPResNet',
+        model_name=config['model']['model_name'],  
+        ckpt_path=config['paths']['model']['clip_ckpt'],  
+        num_classes=config['dataset']['num_classes'],  
         dropout_rate=0.2,  
         use_aux_loss=True,  
-        initial_features=128  
-    ).to(device)
+        initial_features=128,
+        device_ids=[2,3]
+    ) 
 
     # 检查权重文件是否存在  
     if not checkpoint_path.is_file():  

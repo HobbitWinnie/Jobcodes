@@ -10,7 +10,9 @@ class ReCLIPViTSeg(BaseRemoteCLIPSeg):
         ckpt_path=None,   
         num_classes=9,   
         input_size=224,   
-        freeze_clip=True  
+        freeze_clip=True,
+        in_channels=4,  # 支持自定义输入通道数  
+        device_ids=None,  
     ):  
         super().__init__(  
             model_name=model_name,  
@@ -18,18 +20,21 @@ class ReCLIPViTSeg(BaseRemoteCLIPSeg):
             input_size=input_size,  
             ckpt_path=ckpt_path,  
             freeze_clip=freeze_clip,  
-            in_channels=4   # 这里关键，如需支持N通道直接传参  
+            in_channels=in_channels,  
+            device_ids=device_ids
         )  
+
         # 对于ViT，emb维度可从transformer.width获得  
+        embed_dim = self.encoder.transformer.width  
         self.final_conv = nn.Conv2d(  
-            in_channels=self.visual_encoder.transformer.width,  
+            in_channels=embed_dim,  
             out_channels=num_classes,  
             kernel_size=1  
-        ).to(self.device)  
+        ).to(self.main_device)  
 
     def forward(self, x):  
         self._validate_input(x)  
-        x = x.to(self.device)  
+        x = x.to(self.main_device)  
         x = self._forward_features(x)  # [batch, num_patches+1, emb_dim]  
         x = x[:, 1:, :]  # 去掉CLS  
         batch_size, num_patches, embed_dim = x.size()  
@@ -45,17 +50,17 @@ class ReCLIPViTSeg(BaseRemoteCLIPSeg):
 
     def _forward_features(self, x):  
         # Patch Embedding  
-        x = self.visual_encoder.conv1(x)  # [batch, emb_dim, grid, grid]  
+        x = self.encoder.conv1(x)  # [batch, emb_dim, grid, grid]  
         x = x.reshape(x.shape[0], x.shape[1], -1)   # [batch, emb, num_patches]  
         x = x.permute(0, 2, 1)  # [batch, num_patches, emb]  
         # 添加 [CLS]  
-        cls_token = self.visual_encoder.class_embedding.to(x.dtype).to(self.device) + \
+        cls_token = self.encoder.class_embedding.to(x.dtype).to(self.device) + \
                     torch.zeros(x.shape[0], 1, x.shape[-1], dtype=x.dtype, device=self.device)  
         x = torch.cat([cls_token, x], dim=1)  
-        x = x + self.visual_encoder.positional_embedding.to(x.dtype).to(self.device)  
-        x = self.visual_encoder.ln_pre(x)  
+        x = x + self.encoder.positional_embedding.to(x.dtype).to(self.device)  
+        x = self.encoder.ln_pre(x)  
         # ViT主干  
         x = x.permute(1, 0, 2)    # [num_patches+1, batch, emb]  
-        x = self.visual_encoder.transformer(x)  
+        x = self.encoder.transformer(x)  
         x = x.permute(1, 0, 2)    # [batch, num_patches+1, emb]  
         return x  

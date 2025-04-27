@@ -329,10 +329,6 @@ def main():
             num_workers=config['dataset']['num_workers'],
         )
 
-        if torch.cuda.device_count() > 1:  
-            model = nn.DataParallel(model)  
-            logging.info(f"使用 {torch.cuda.device_count()} 个GPU训练")  
-
         # 开始训练
         best_miou, metrics_history = train_loop(
             model, train_loader, val_loader, criterion,
