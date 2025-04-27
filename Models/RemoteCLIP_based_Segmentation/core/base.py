@@ -25,11 +25,6 @@ class BaseRemoteCLIPSeg(nn.Module):
         self.device_ids = device_ids or []  
         
         self.logger = logging.getLogger(self.__class__.__name__)  
-        if not self.logger.hasHandlers():  
-            logging.basicConfig(  
-                level=logging.INFO if verbose else logging.WARNING,  
-                format="%(asctime)s | %(levelname)s | %(name)s | %(message)s"  
-            )  
         
         self.main_device = self._determine_main_device()  
         self._validate_devices()  

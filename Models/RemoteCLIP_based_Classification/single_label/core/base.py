@@ -22,9 +22,6 @@ class BaseCLIPClassifier(ABC):
     ):
         self.labels = labels
         self.logger = logging.getLogger(self.__class__.__name__)
-        if not self.logger.hasHandlers():  
-            logging.basicConfig(level=logging.INFO if verbose else logging.WARNING) 
-
         self.device_ids = device_ids or []
         self._validate_devices()
         self.main_device = self._determine_main_device()
