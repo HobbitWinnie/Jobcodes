@@ -187,8 +187,8 @@ def main():
         exp_dir = Path(config['paths']['model']['save_dir']) / timestamp  
         exp_dir.mkdir(parents=True, exist_ok=True)  
 
-        # 设置日志  
-        setup_logging(exp_dir / 'predict.log')  
+        # 设置日志   
+        setup_logging(exp_dir)  
         with open(exp_dir / 'config.json', 'w') as f:  
             json.dump(config.config, f, indent=4)  
 
