@@ -1,0 +1,5 @@
+2025-04-29 17:32:22,417 - INFO - Loaded RN50 model config.
+2025-04-29 17:32:24,964 - INFO - 使用 4 个GPU训练
+2025-04-29 17:32:24,965 - INFO - 开始训练 - 总轮次: 20000
+2025-04-29 17:32:31,517 - ERROR - 训练出错: nan_to_num(): argument 'input' (position 1) must be Tensor, not dict
+2025-04-29 17:32:31,517 - ERROR - 程序出错: nan_to_num(): argument 'input' (position 1) must be Tensor, not dict

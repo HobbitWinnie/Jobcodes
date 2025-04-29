@@ -1,36 +1,25 @@
 
 import sys
-sys.path.append('/home/nw/Codes/Methods/RemoteCLIP/Image_segementation')  
+sys.path.append('/home/nw/Codes/RemoteCLIP/Image_segementation')  
 
 import torch
 import torch.optim as optim
 import logging
 import time
 import numpy as np
-import torch.nn as nn  
 import json
 from torch.optim.lr_scheduler import CosineAnnealingWarmRestarts
 from pathlib import Path
 from datetime import datetime
 from torch.cuda.amp import GradScaler, autocast
 from data.dataset import create_dataloaders
-from nw.Codes.Models.RemoteCLIP_based_Segmentation.clip_vit_seg_model import CLIPVITSegmentation
+from clip_vit_seg_model import CLIPVITSegmentation
 from config import get_config
-from nw.Codes.Models.RemoteCLIP_based_Segmentation.modules.combined_loss import CombinedLoss
+from combined_loss import CombinedLoss
 from utils import setup_logging
 
 
 def init_training(config):
-    """初始化日志文件"""
-    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-    exp_dir = Path(__file__).parent/'model_save'/ timestamp
-    exp_dir.mkdir(parents=True, exist_ok=True)
-    setup_logging(exp_dir / 'training.log')
-
-    # 保存配置文件  
-    with open(exp_dir / 'config.json', 'w') as f:
-        json.dump(config.config, f, indent=4)
-
     """初始化训练组件"""
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     if torch.cuda.is_available():
@@ -39,6 +28,16 @@ def init_training(config):
         logging.info(f"CUDA版本: {torch.version.cuda}")
         logging.info(f"可用GPU: {torch.cuda.get_device_name(0)}")
         logging.info(f"当前GPU内存使用: {torch.cuda.memory_allocated(0) / 1024 ** 2:.2f}MB")
+
+    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+    exp_dir = Path(__file__).parent/'model_save'/ timestamp
+    exp_dir.mkdir(parents=True, exist_ok=True)
+    
+    setup_logging(exp_dir / 'training.log')
+
+    # 保存配置文件  
+    with open(exp_dir / 'config.json', 'w') as f:
+        json.dump(config.config, f, indent=4)
 
     # 定义英文的类别名称  
     class_names = [  

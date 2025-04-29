@@ -7,7 +7,7 @@ from datetime import datetime
 import rasterio  
 import tifffile  
 from typing import Tuple, Optional  
-from config import get_config  
+from ..config.config import get_config  
 from utils.set_logging import setup_logging
 
   

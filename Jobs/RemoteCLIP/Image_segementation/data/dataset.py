@@ -1,7 +1,3 @@
-
-import sys
-sys.path.append('/home/nw/Codes/RemoteCLIP/Image_segementation')  
-
 import os  
 import torch  
 import numpy as np  

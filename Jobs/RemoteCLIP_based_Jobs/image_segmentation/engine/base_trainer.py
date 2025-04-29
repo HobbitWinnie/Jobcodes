@@ -7,12 +7,12 @@ from torch.cuda.amp import GradScaler, autocast
 import gc  
 
 class BaseTrainer:  
-    def __init__(self, model, optimizer, scheduler, criterion, device, exp_dir, config):  
+    def __init__(self, model, optimizer, scheduler, criterion, exp_dir, config):  
         self.model = model  
         self.optimizer = optimizer  
         self.scheduler = scheduler  
         self.criterion = criterion  
-        self.device = device  
+        self.device = model.main_device  
         self.exp_dir = exp_dir  
         self.config = config  
         self.scaler = GradScaler()  
@@ -28,6 +28,7 @@ class BaseTrainer:
             'val_accuracy': [],  
             'learning_rate': []  
         }  
+        self.logger = logging.getLogger(self.__class__.__name__)  
 
     def train(self, train_loader, val_loader):  
         total_epochs = self.config['training']['epochs']  
@@ -42,8 +43,9 @@ class BaseTrainer:
 
             for batch in train_loader:  
                 images, masks = batch[0].to(self.device), batch[1].to(self.device)  
+                
                 # 针对ViT系列带文本时支持text batch  
-                text = batch[2] if len(batch) > 2 else None  
+                text = batch[2] if len(batch) > 2 and self.model.model_name == 'Vit' else None  
 
                 self.optimizer.zero_grad(set_to_none=True)  
                 with autocast():  
@@ -51,10 +53,11 @@ class BaseTrainer:
                         outputs = self.model(images, text)  
                     else:  
                         outputs = self.model(images)  
+                        
                     loss, loss_info = self.criterion(outputs, masks)  
 
                 if not torch.isfinite(loss):  
-                    logging.warning(f"检测到非有限损失值: {loss.item()}")  
+                    self.logger.warning(f"检测到非有限损失值: {loss.item()}")  
                     continue  
 
                 self.scaler.scale(loss).backward()                  
@@ -89,10 +92,9 @@ class BaseTrainer:
             self.metrics_history['val_miou'].append(val_metrics['mean_iou'])  
             self.metrics_history['val_accuracy'].append(val_metrics['accuracy'])  
 
-            # lr调度器可放在此处(对CosineAnnealingWarmRestarts)  
             self.scheduler.step()  
 
-            logging.info(  
+            self.logger.info(  
                 f"Epoch {epoch + 1}/{total_epochs} [{epoch_time:.2f}s], "  
                 f"Training: [{avg_loss:.4f} (Focal: {avg_focal_loss:.4f}, Dice: {avg_dice_loss:.4f})], "  
                 f"Validation: [{val_metrics['loss']:.4f} (Focal: {val_metrics['focal_loss']:.4f}, Dice: {val_metrics['dice_loss']:.4f}), "  
@@ -102,13 +104,13 @@ class BaseTrainer:
             if val_metrics['mean_iou'] > self.best_miou:  
                 self.best_miou = val_metrics['mean_iou']  
                 torch.save(self.model.state_dict(), self.exp_dir / 'best_model.pth')  
-                logging.info(f"保存最佳模型 (mIoU: {self.best_miou:.4f})")  
+                self.logger.info(f"保存最佳模型 (mIoU: {self.best_miou:.4f})")  
 
             with open(self.exp_dir / 'metrics_history.json', 'w') as f:  
                 json.dump(self.metrics_history, f, indent=4)  
 
             if current_lr < 1e-7:  
-                logging.info("学习率过小，停止训练")  
+                self.logger.info("学习率过小，停止训练")  
                 break  
             gc.collect()  
         return self.best_miou, self.metrics_history  
@@ -123,7 +125,8 @@ class BaseTrainer:
         with torch.no_grad():  
             for batch in val_loader:  
                 images, masks = batch[0].to(self.device), batch[1].to(self.device)  
-                text = batch[2] if len(batch) > 2 else None  
+                # 针对ViT系列带文本时支持text batch  
+                text = batch[2] if len(batch) > 2 and self.model.model_name == 'Vit' else None  
 
                 with autocast():  
                     if text is not None:  

@@ -63,7 +63,7 @@ if __name__ == "__main__":
     )
 
     # 配置/训练分类器
-    classifier.train(train_loader,test_loader)  
+    classifier.train(train_loader, test_loader)  
 
 
     # 调用分类器进行分类并保存top-3结果至csv文件

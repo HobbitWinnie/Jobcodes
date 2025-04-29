@@ -24,7 +24,7 @@ class Config:
         self.create_directories()  
    
     @staticmethod  
-    def _default_config(self) -> Dict[str, Any]:  
+    def _default_config() -> Dict[str, Any]:  
         # 此处可以加更多默认字段  
         base_dir = Path("/home/Dataset/nw/Segmentation/CpeosTest")  
         return {  
@@ -37,8 +37,8 @@ class Config:
                     'label_dir': base_dir / "train_4channel" / "labels"  
                 },  
                 'model': {  
-                    'save_dir': '/home/nw/Codes/Jobs/RemoteCLIP_based_Jobs/image_segmentation',  
-                    'clip_ckpt': '/home/nw/Assets/RemoteCLIP/ckpt/RemoteCLIP-RN50.pt',  
+                    'save_dir': '/home/nw/Codes/Jobs/RemoteCLIP_based_Jobs/image_segmentation/model_save',  
+                    'clip_ckpt': '/home/nw/Assets/RemoteCLIP/ckpt/RemoteCLIP-ViT-L-14.pt',   # RemoteCLIP-RN50, RemoteCLIP-ViT-L-14
                 },  
                 'input': {  
                     'train_image': 'GF2_train_image.tif',  
@@ -59,8 +59,8 @@ class Config:
                 'num_workers': 4  
             },  
             'model': {  
-                'model_type':'UNetWithReCLIPResNet',
-                'model_name': 'RN50',
+                'model_type':'CLIPVITSegmentation',
+                'model_name': 'ViT-L-14' , # 'RN50', 'ViT-L-14'
                 'in_channels': 4,  
                 'initial_features': 128,  
                 'dropout_rate': 0.2,  

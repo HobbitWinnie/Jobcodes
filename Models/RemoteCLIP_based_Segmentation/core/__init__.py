@@ -1,3 +1,3 @@
-from .base import BaseCLIPClassifier  
+from .base import BaseRemoteCLIPSeg  
 
-__all__ = ['BaseCLIPClassifier']  
+__all__ = ['BaseRemoteCLIPSeg']  

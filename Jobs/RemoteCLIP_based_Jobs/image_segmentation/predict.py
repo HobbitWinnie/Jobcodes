@@ -1,20 +1,20 @@
+import sys  
+sys.path.append('/home/nw/Codes')  
 
 import torch  
-import torch.nn as nn  
-import numpy as np  
 import logging  
 import os  
 import rasterio  
-from datetime import datetime  
 import json  
-import torch.nn.functional as F  
+import numpy as np  
+from datetime import datetime  
 from torch.cuda.amp import autocast  
 from tqdm import tqdm  
 from pathlib import Path  
 
 from utils.set_logging import setup_logging  
-from config.config import get_config  
-from data.dataset import load_and_save_data, split_image_into_patches, reconstruct_image_from_patches, CustomTransform  
+from .config.config import get_config  
+from .data.dataset import load_and_save_data, split_image_into_patches, reconstruct_image_from_patches, CustomTransform  
 from Models.RemoteCLIP_based_Segmentation.factory import segmentation_model_factory  
 
 

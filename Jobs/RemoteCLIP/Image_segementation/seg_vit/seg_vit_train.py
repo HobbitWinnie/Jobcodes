@@ -1,6 +1,6 @@
 
 import sys
-sys.path.append('/home/nw/Codes/Methods/RemoteCLIP/Image_segementation')  
+sys.path.append('/home/nw/Codes/RemoteCLIP/Image_segementation')  
 
 import torch
 import torch.optim as optim
@@ -14,9 +14,9 @@ from pathlib import Path
 from datetime import datetime
 from torch.cuda.amp import GradScaler, autocast
 from data.dataset import create_dataloaders
-from nw.Codes.Models.RemoteCLIP_based_Segmentation.seg_vit_model import CLIPSegmentation
+from seg_vit_model import CLIPSegmentation
 from config import get_config
-from nw.Codes.Models.RemoteCLIP_based_Segmentation.modules.combined_loss import CombinedLoss
+from combined_loss import CombinedLoss
 from utils import setup_logging
 
 
@@ -320,3 +320,4 @@ def main():
 
 if __name__ == '__main__':
     main()
+

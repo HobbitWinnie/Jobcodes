@@ -11,7 +11,7 @@ import torch.nn.functional as F
 from torch.cuda.amp import autocast
 from tqdm import tqdm
 from pathlib import Path
-from nw.Codes.Models.RemoteCLIP_based_Segmentation.clip_vit_seg_model import CLIPVITSegmentation
+from clip_vit_seg_model import UNetWithCLIP
 from config import get_config
 from ..data.data_preparation import load_and_save_data
 from ..data.dataset import split_image_into_patches, reconstruct_image_from_patches, CustomTransform
@@ -21,7 +21,7 @@ from utils import setup_logging
 def load_model(config, checkpoint_path, device):
     """加载训练好的模型"""
     num_classes = config['dataset']['num_classes']
-    model = CLIPVITSegmentation(
+    model = UNetWithCLIP(
         model_name=config['model']['model_name'],
         ckpt_path=config['paths']['model']['clip_ckpt'],
         num_classes=num_classes,
@@ -187,8 +187,8 @@ def main():
         exp_dir = Path(config['paths']['model']['save_dir']) / timestamp  
         exp_dir.mkdir(parents=True, exist_ok=True)  
 
-        # 设置日志   
-        setup_logging(exp_dir)  
+        # 设置日志  
+        setup_logging(exp_dir / 'predict.log')  
         with open(exp_dir / 'config.json', 'w') as f:  
             json.dump(config.config, f, indent=4)  
 

@@ -1,0 +1,5 @@
+2025-04-29 15:36:33,884 - INFO - Main device: cuda:1
+2025-04-29 15:36:39,051 - INFO - Loaded RN50 model config.
+2025-04-29 15:36:47,104 - INFO - 加载CLIP权重: /home/nw/Assets/RemoteCLIP/ckpt/RemoteCLIP-RN50.pt
+2025-04-29 15:36:47,431 - INFO - 使用多GPU: [1, 2, 3]
+2025-04-29 15:36:47,431 - INFO - CLIP视觉主干初始化完成。

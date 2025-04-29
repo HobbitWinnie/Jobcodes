@@ -1,0 +1,3 @@
+2025-04-29 16:16:51,357 - INFO - Main device: cuda:1
+2025-04-29 16:16:51,359 - INFO - Loaded ViT-L-14 model config.
+2025-04-29 16:16:55,129 - INFO - 加载CLIP权重: /home/nw/Assets/RemoteCLIP/ckpt/RemoteCLIP-ViT-L-14.pt

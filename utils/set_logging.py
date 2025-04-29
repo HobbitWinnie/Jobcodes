@@ -40,7 +40,7 @@ def setup_logging(log_dir: str = None, level: int = logging.INFO, log_to_console
     )  
 
 
-def save_model_config(model, config, output_dir):  
+def save_model_config(config, output_dir):  
     """保存模型配置到 JSON 文件"""  
     model_config_path = os.path.join(output_dir, 'model_config.json')  
     with open(model_config_path, 'w') as f:  

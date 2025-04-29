@@ -1,5 +1,5 @@
 import sys
-sys.path.append('/home/nw/Codes/Methods/RemoteCLIP/Image_segementation')  
+sys.path.append('/home/nw/Codes/Jobs/RemoteCLIP/Image_segementation')  
 
 import torch
 import torch.optim as optim
@@ -14,15 +14,13 @@ from pathlib import Path
 from datetime import datetime
 from torch.cuda.amp import GradScaler, autocast
 from data.dataset import create_dataloaders
-from nw.Codes.Models.RemoteCLIP_based_Segmentation.seg_rn50_unet_model import UNetWithCLIP
+from seg_rn50_unet_model import UNetWithCLIP
 from config import get_config
-from nw.Codes.Models.RemoteCLIP_based_Segmentation.modules.combined_loss import CombinedLoss
+from combined_loss import CombinedLoss
 from utils import setup_logging
 
 
 def init_training(config):  
-    """初始化训练组件"""  
-    # 设置设备并确保cudnn基准测试  
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')  
     if torch.cuda.is_available():  
         torch.backends.cudnn.benchmark = True  
@@ -30,52 +28,40 @@ def init_training(config):
         logging.info(f"CUDA版本: {torch.version.cuda}")  
         logging.info(f"可用GPU: {torch.cuda.get_device_name(0)}")  
         logging.info(f"当前GPU内存使用: {torch.cuda.memory_allocated(0) / 1024**2:.2f}MB")  
-
     # 创建实验目录  
     timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')  
     exp_dir = Path(config['paths']['model']['save_dir']) / timestamp  
     exp_dir.mkdir(parents=True, exist_ok=True)  
-
     # 设置日志  
     setup_logging(exp_dir / 'training.log')  
     with open(exp_dir / 'config.json', 'w') as f:  
         json.dump(config.config, f, indent=4)  
-
     # 初始化模型  
-    num_classes = config['dataset']['num_classes']  
     model = UNetWithCLIP(  
         model_name=config['model']['model_name'],  
         ckpt_path=config['paths']['model']['clip_ckpt'],  
-        num_classes=num_classes,  
+        num_classes=config['dataset']['num_classes'],  
         dropout_rate=0.2,  
         use_aux_loss=True,  
-        initial_features=128  
     ).to(device)  
-
-    # 初始化优化器  
-    optimizer = optim.AdamW(  
+    optimizer = torch.optim.AdamW(  
         model.parameters(),  
         lr=config['training']['learning_rate'],  
         weight_decay=config['training']['weight_decay'],  
         betas=(0.9, 0.999)  
     )  
-
-    # 初始化学习率调度器  
     scheduler = CosineAnnealingWarmRestarts(  
         optimizer,  
         T_0=config['training']['scheduler_T0'],  
         T_mult=config['training']['scheduler_T_mult'],  
         eta_min=config['training']['min_lr']  
     )  
-
-    # 初始化损失函数  
     criterion = CombinedLoss(  
         gamma=config['training'].get('gamma', 2.0),  
         alpha=config['training'].get('alpha', 0.5),  
         ignore_index=config['training']['ignore_index']  
     ).to(device)  
-
-    return device, exp_dir, model, optimizer, scheduler, criterion  
+    return device, exp_dir, model, optimizer, scheduler, criterion 
 
 def validate_model(model, val_loader, criterion, device, num_classes):  
     """验证模型性能"""  
@@ -208,6 +194,7 @@ def train_loop(model, train_loader, val_loader, criterion, optimizer, scheduler,
 
                 scaler.scale(loss).backward()  
 
+                # 在 backward() 之后，添加以下代码  
                 for name, param in model.named_parameters():  
                     if param.grad is not None:  
                         if torch.isnan(param.grad).any() or torch.isinf(param.grad).any():  
@@ -308,48 +295,38 @@ def train_loop(model, train_loader, val_loader, criterion, optimizer, scheduler,
 
     return best_miou, metrics_history  
 
-def main():
-    """主程序入口"""
-    try:
-        # 加载配置
-        config = get_config()
-    
-        # 初始化训练组件
-        device, exp_dir, model, optimizer, scheduler, criterion = init_training(config)
-
-        # 创建数据加载器
-        train_loader, val_loader = create_dataloaders(
-            image_dir= Path(config['paths']['data']['image_dir']),
-            labels_dir=Path(config['paths']['data']['label_dir']),
-            batch_size=config['training']['batch_size'],
-            train_ratio=config['dataset']['train_val_split'],
-            num_workers=config['dataset']['num_workers'],
-        )
-
+def main():  
+    try:  
+        config = get_config()  
+        device, exp_dir, model, optimizer, scheduler, criterion = init_training(config)  
+        train_loader, val_loader = create_dataloaders(  
+            image_dir=Path(config['paths']['data']['image_dir']),  
+            labels_dir=Path(config['paths']['data']['label_dir']),  
+            batch_size=config['training']['batch_size'],  
+            train_ratio=config['dataset']['train_val_split'],  
+            num_workers=config['dataset']['num_workers'],  
+        )  
+        # 这里建议先放在多GPU代码之下再 to(device)  
         if torch.cuda.device_count() > 1:  
             model = nn.DataParallel(model)  
             logging.info(f"使用 {torch.cuda.device_count()} 个GPU训练")  
 
-        # 开始训练
-        best_miou, metrics_history = train_loop(
-            model, train_loader, val_loader, criterion,
-            optimizer, scheduler, device, config, exp_dir
-        )
-        
-        # 训练完成后的总结
-        print("\n训练总结:")
-        print(f"最佳mIoU: {best_miou:.4f}")
-        
-        # 保存最终的训练历史
-        with open(exp_dir / 'final_metrics.json', 'w') as f:
-            json.dump({
-                'best_miou': float(best_miou),
-                'metrics_history': metrics_history
-            }, f, indent=4)
+        best_miou, metrics_history = train_loop(  
+            model, train_loader, val_loader, criterion,  
+            optimizer, scheduler, device, config, exp_dir  
+        )  
+        print("\n训练总结:")  
+        print(f"最佳mIoU: {best_miou:.4f}")  
 
-    except Exception as e:
-        logging.error(f"程序出错: {str(e)}")
-        raise
+        with open(exp_dir / 'final_metrics.json', 'w') as f:  
+            json.dump({  
+                'best_miou': float(best_miou),  
+                'metrics_history': metrics_history  
+            }, f, indent=4)  
 
-if __name__ == '__main__':
-    main()
+    except Exception as e:  
+        logging.error(f"程序出错: {str(e)}")  
+        raise  
+
+if __name__ == '__main__':  
+    main()  

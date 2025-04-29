@@ -1,13 +1,11 @@
-from .clip_few_shot import FewShotClassifier
-from .clip_knn import KNNClassifier  
-from .clip_rf import RFClassifier  
-from .clip_svm import SVMClassifier  
-from .clip_zero_shot import ZeroShotClassifier
+from .clip_vit_seg import CLIPVITSegmentation
+from .reclip_rn50_seg import ReCLIPResNetSeg  
+from .reclip_rn50_unet_seg import UNetWithReCLIPResNet  
+from .reclip_vit_seg import ReCLIPViTSeg  
 
 __all__ = [  
-    'FewShotClassifier',   
-    'KNNClassifier',  
-    'RFClassifier',  
-    'SVMClassifier',  
-    'ZeroShotClassifier'  
+    'CLIPVITSegmentation',   
+    'ReCLIPResNetSeg',  
+    'UNetWithReCLIPResNet',  
+    'ReCLIPViTSeg',  
 ]  

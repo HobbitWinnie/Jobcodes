@@ -1,0 +1,8 @@
+2025-04-29 14:53:58,211 - INFO - Main device: cuda:1
+2025-04-29 14:53:58,213 - INFO - Loaded RN50 model config.
+2025-04-29 14:54:10,352 - INFO - 加载CLIP权重: /home/nw/Assets/RemoteCLIP/ckpt/RemoteCLIP-RN50.pt
+2025-04-29 14:54:10,677 - INFO - 使用多GPU: [1, 2, 3]
+2025-04-29 14:54:10,677 - INFO - CLIP视觉主干初始化完成。
+2025-04-29 14:55:04,457 - INFO - Epoch 1/20000 [26.79s], Training: [1.6173 (Focal: 0.6644, Dice: 0.9529)], Validation: [1.5444 (Focal: 0.5950, Dice: 0.9494), Acc = 0.8005, mIoU = 0.1554], LR: 0.000010
+2025-04-29 14:55:04,698 - INFO - 保存最佳模型 (mIoU: 0.1554)
+2025-04-29 14:55:53,479 - INFO - Epoch 2/20000 [24.01s], Training: [1.4280 (Focal: 0.4893, Dice: 0.9386)], Validation: [1.3579 (Focal: 0.4264, Dice: 0.9315), Acc = 0.7976, mIoU = 0.1543], LR: 0.000010

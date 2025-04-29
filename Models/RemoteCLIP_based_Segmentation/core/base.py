@@ -29,7 +29,7 @@ class BaseRemoteCLIPSeg(nn.Module):
         self.main_device = self._determine_main_device()  
         self._validate_devices()  
         self.logger.info(f"Main device: {self.main_device}")  
-        self._init_clip_model(ckpt_path, freeze_clip)  
+        self._init_clip_model(model_name, ckpt_path, freeze_clip)  
         self.to(self.main_device)  
     
     def _validate_devices(self):  
@@ -57,7 +57,7 @@ class BaseRemoteCLIPSeg(nn.Module):
             self._adjust_conv1(visual_encoder, self.in_channels)  
  
             if freeze_clip:  
-                for param in self.visual_encoder.parameters():  
+                for param in visual_encoder.parameters():  
                     param.requires_grad = False  
 
             if ckpt_path is not None:  

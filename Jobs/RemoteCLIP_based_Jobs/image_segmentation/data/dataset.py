@@ -11,6 +11,7 @@ import tifffile
 import torchvision.transforms.functional as F  
 from torchvision import transforms  
 from PIL import Image
+import logging  
 from torch.utils.data import Dataset, DataLoader, random_split  
 from torch.utils.data import Dataset  
 

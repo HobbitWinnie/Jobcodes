@@ -1,0 +1,2 @@
+2025-04-29 17:30:51,274 - INFO - Loaded RN50 model config.
+2025-04-29 17:31:17,130 - ERROR - 程序出错: CLIP 模型加载失败: The expanded size of the tensor (64) must match the existing size (32) at non-singleton dimension 0.  Target sizes: [64, 3, 3, 3].  Tensor sizes: [32, 3, 3, 3]
