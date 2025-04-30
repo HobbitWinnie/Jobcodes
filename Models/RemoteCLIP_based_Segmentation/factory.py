@@ -1,4 +1,5 @@
 import inspect  
+import torch  
 from .architectures.clip_vit_seg import CLIPVITSegmentation  
 from .architectures.reclip_rn50_seg import ReCLIPResNetSeg
 from .architectures.reclip_rn50_unet_seg import UNetWithReCLIPResNet
@@ -32,5 +33,20 @@ def segmentation_model_factory(model_type, **kwargs):
             filtered_kwargs[name] = param.default  
         elif name not in filtered_kwargs and param.default is inspect.Parameter.empty:  
             raise TypeError(f'Missing required argument: {name}')  
-            
-    return model_class(**filtered_kwargs)  
+    
+
+   # =============== 自动DataParallel包装逻辑 =================  
+    device_ids = filtered_kwargs.get("device_ids", None)  
+    model = model_class(**filtered_kwargs)  
+    
+    # 只要device_ids合法且大于1并且cuda可用，就用DataParallel包裹  
+    main_device = (f"cuda:{device_ids[0]}" if device_ids else "cuda:0") \
+        if torch.cuda.is_available() else "cpu"  
+    model.to(main_device)  
+    
+    if device_ids and len(device_ids) > 1 and torch.cuda.is_available():  
+        if hasattr(model, "_logger"):  
+            model._logger.info(f"[Factory] Enabled multi-GPU DataParallel on devices: {device_ids}")  
+        model = torch.nn.DataParallel(model, device_ids=device_ids)  
+    
+    return model  

@@ -10,6 +10,7 @@ from torch.optim.lr_scheduler import CosineAnnealingWarmRestarts
 from Models.RemoteCLIP_based_Segmentation.modules.combined_loss import CombinedLoss
 from Models.RemoteCLIP_based_Segmentation.factory import segmentation_model_factory  
 from engine.base_trainer import BaseTrainer  
+from engine.unet_trainer import UnetTrainer
 from config.config import get_config        
 from utils.set_logging import setup_logging  
 from data.dataset import create_dataloaders  
@@ -39,7 +40,7 @@ def main():
 
     # 初始化模型  
     model = segmentation_model_factory(  
-        model_type='CLIPVITSegmentation',  
+        model_type='UNetWithReCLIPResNet',   # 'UNetWithReCLIPResNet', ReCLIPResNetSeg, ReCLIPViTSeg, CLIPVITSegmentation
         model_name=config['model']['model_name'],  
         ckpt_path=config['paths']['model']['clip_ckpt'],  
         num_classes=config.dataset['num_classes'],  
@@ -78,7 +79,7 @@ def main():
     )  
 
     # 训练  
-    trainer = BaseTrainer(model, optimizer, scheduler, criterion, exp_dir, config)  
+    trainer = UnetTrainer(model, optimizer, scheduler, criterion, exp_dir, config)  
     best_miou, metrics_history = trainer.train(train_loader, val_loader)  
 
     logging.info("\n训练总结:")  

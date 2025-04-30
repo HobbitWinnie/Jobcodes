@@ -20,6 +20,28 @@ from combined_loss import CombinedLoss
 from utils import setup_logging
 
 
+def compute_total_loss(outputs, targets, criterion, aux_weight=0.4):  
+    """  
+    支持 {"main", "aux"} dict 或单tensor。如果有aux分支则加权辅助损失。  
+    返回：总损失，含主分支和辅助分支统计的info字典  
+    """  
+    if isinstance(outputs, dict):  
+        loss_main, loss_info_main = criterion(outputs['main'], targets)  
+        if 'aux' in outputs and outputs['aux'] is not None:  
+            loss_aux, loss_info_aux = criterion(outputs['aux'], targets)  
+            total_loss = loss_main + aux_weight * loss_aux  
+            loss_info = {  
+                'focal_loss': loss_info_main['focal_loss'],  
+                'dice_loss': loss_info_main['dice_loss'],  
+                'focal_loss_aux': loss_info_aux['focal_loss'],  
+                'dice_loss_aux': loss_info_aux['dice_loss']  
+            }  
+        else:  
+            total_loss, loss_info = loss_main, loss_info_main  
+    else:  
+        total_loss, loss_info = criterion(outputs, targets)  
+    return total_loss, loss_info  
+
 def init_training(config):  
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')  
     if torch.cuda.is_available():  
@@ -28,14 +50,17 @@ def init_training(config):
         logging.info(f"CUDA版本: {torch.version.cuda}")  
         logging.info(f"可用GPU: {torch.cuda.get_device_name(0)}")  
         logging.info(f"当前GPU内存使用: {torch.cuda.memory_allocated(0) / 1024**2:.2f}MB")  
+    
     # 创建实验目录  
     timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')  
     exp_dir = Path(config['paths']['model']['save_dir']) / timestamp  
     exp_dir.mkdir(parents=True, exist_ok=True)  
+    
     # 设置日志  
     setup_logging(exp_dir / 'training.log')  
     with open(exp_dir / 'config.json', 'w') as f:  
         json.dump(config.config, f, indent=4)  
+    
     # 初始化模型  
     model = UNetWithCLIP(  
         model_name=config['model']['model_name'],  
@@ -44,23 +69,27 @@ def init_training(config):
         dropout_rate=0.2,  
         use_aux_loss=True,  
     ).to(device)  
+    
     optimizer = torch.optim.AdamW(  
         model.parameters(),  
         lr=config['training']['learning_rate'],  
         weight_decay=config['training']['weight_decay'],  
         betas=(0.9, 0.999)  
     )  
+    
     scheduler = CosineAnnealingWarmRestarts(  
         optimizer,  
         T_0=config['training']['scheduler_T0'],  
         T_mult=config['training']['scheduler_T_mult'],  
         eta_min=config['training']['min_lr']  
     )  
+   
     criterion = CombinedLoss(  
         gamma=config['training'].get('gamma', 2.0),  
         alpha=config['training'].get('alpha', 0.5),  
         ignore_index=config['training']['ignore_index']  
     ).to(device)  
+  
     return device, exp_dir, model, optimizer, scheduler, criterion 
 
 def validate_model(model, val_loader, criterion, device, num_classes):  
@@ -77,7 +106,7 @@ def validate_model(model, val_loader, criterion, device, num_classes):
 
             with autocast():  
                 outputs = model(images)  
-                loss, loss_info = criterion(outputs, masks)  
+                loss, loss_info = compute_total_loss(outputs, masks, criterion, aux_weight=0.4)  
 
             val_loss += loss.item()  
             loss_components['focal_loss'] += loss_info['focal_loss']  
@@ -186,7 +215,7 @@ def train_loop(model, train_loader, val_loader, criterion, optimizer, scheduler,
 
                 with autocast():  
                     outputs = model(images)  
-                    loss, loss_info = criterion(outputs, masks)  
+                    loss, loss_info = compute_total_loss(outputs, masks, criterion, aux_weight=0.4)  
 
                 if not torch.isfinite(loss):  
                     logging.warning(f"检测到非有限损失值: {loss.item()}")  

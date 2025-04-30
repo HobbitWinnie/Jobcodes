@@ -1,0 +1,4 @@
+2025-04-30 14:50:32,530 - INFO - Main device: cuda:1
+2025-04-30 14:50:32,532 - INFO - Loaded RN50 model config.
+2025-04-30 14:52:57,552 - INFO - Epoch 1/20000 [42.54s], Training: [3.0418 (Focal: 1.2129, Dice: 0.9668, AuxFocal: 1.3434, AuxDice: 0.8119)], Validation: [2.0937 (Focal: 0.6928, Dice: 0.9547, AuxFocal: 0.2266, AuxDice: 0.8886), Acc = 0.0434, mIoU = 0.0219], LR: 0.000010
+2025-04-30 14:53:00,204 - INFO - 保存最佳模型 (mIoU: 0.0219)

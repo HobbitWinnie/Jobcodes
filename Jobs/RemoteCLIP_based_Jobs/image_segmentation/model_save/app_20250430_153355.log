@@ -1,0 +1,3 @@
+2025-04-30 15:33:55,897 - INFO - Main device: cuda:1
+2025-04-30 15:33:55,898 - INFO - Loaded RN50 model config.
+2025-04-30 15:33:58,358 - INFO - [Factory] Enabled multi-GPU DataParallel on devices: [1, 2, 3]
