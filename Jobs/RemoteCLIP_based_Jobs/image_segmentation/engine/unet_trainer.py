@@ -3,7 +3,6 @@ from torch.cuda.amp import autocast
 import gc  
 import time  
 import numpy as np  
-import json  
 from .base_trainer import BaseTrainer
 
 class UnetTrainer(BaseTrainer):  
@@ -17,10 +16,6 @@ class UnetTrainer(BaseTrainer):
         """  
         super().__init__(model, optimizer, scheduler, criterion_single, exp_dir, config)  
         self.aux_weight = aux_weight  
-        self.metrics_history['train_focal_loss_aux'] = []  
-        self.metrics_history['train_dice_loss_aux'] = []  
-        self.metrics_history['val_focal_loss_aux'] = []  
-        self.metrics_history['val_dice_loss_aux'] = []  
 
     def compute_total_loss(self, outputs, targets):  
         """  
@@ -93,23 +88,8 @@ class UnetTrainer(BaseTrainer):
             avg_dice_loss_aux = epoch_dice_loss_aux / batch_count  
             epoch_time = time.time() - epoch_start  
 
-            # 日志记录  
-            self.metrics_history['train_loss'].append(avg_loss)  
-            self.metrics_history['train_focal_loss'].append(avg_focal_loss)  
-            self.metrics_history['train_dice_loss'].append(avg_dice_loss)  
-            self.metrics_history['train_focal_loss_aux'].append(avg_focal_loss_aux)  
-            self.metrics_history['train_dice_loss_aux'].append(avg_dice_loss_aux)  
-            self.metrics_history['learning_rate'].append(current_lr)  
-
             # 验证  
             val_metrics = self.validate(val_loader, num_classes)  
-            self.metrics_history['val_loss'].append(val_metrics['loss'])  
-            self.metrics_history['val_focal_loss'].append(val_metrics['focal_loss'])  
-            self.metrics_history['val_dice_loss'].append(val_metrics['dice_loss'])  
-            self.metrics_history['val_focal_loss_aux'].append(val_metrics.get('focal_loss_aux', 0))  
-            self.metrics_history['val_dice_loss_aux'].append(val_metrics.get('dice_loss_aux', 0))  
-            self.metrics_history['val_miou'].append(val_metrics['mean_iou'])  
-            self.metrics_history['val_accuracy'].append(val_metrics['accuracy'])  
 
             self.scheduler.step()  
             self.logger.info(  
@@ -124,13 +104,11 @@ class UnetTrainer(BaseTrainer):
                 torch.save(self.model.state_dict(), self.exp_dir / 'best_model.pth')  
                 self.logger.info(f"保存最佳模型 (mIoU: {self.best_miou:.4f})")  
 
-            with open(self.exp_dir / 'metrics_history.json', 'w') as f:  
-                json.dump(self.metrics_history, f, indent=4)  
             if current_lr < 1e-7:  
                 self.logger.info("学习率过小，停止训练")  
                 break  
             gc.collect()  
-        return self.best_miou, self.metrics_history  
+        return self.best_miou
 
     def validate(self, val_loader, num_classes):  
         self.model.eval()  

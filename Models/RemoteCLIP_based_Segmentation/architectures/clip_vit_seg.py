@@ -22,7 +22,7 @@ class CLIPVITSegmentation(BaseRemoteCLIPSeg):
             ckpt_path, 
             freeze_clip,
             in_channels,  
-            device_ids=device_ids,  
+            device_ids,  
         )  
 
         embed_dim = self.encoder.transformer.width  
@@ -35,7 +35,7 @@ class CLIPVITSegmentation(BaseRemoteCLIPSeg):
         self.tokenizer = open_clip.get_tokenizer(model_name)  
 
     def forward(self, x, text):  
-        x = x.to(self.main_device)  
+        # x = x.to(self.main_device)  
         self._validate_input(x)  
         
         visual_feat = self._forward_features(x)[:, 1:, :]  

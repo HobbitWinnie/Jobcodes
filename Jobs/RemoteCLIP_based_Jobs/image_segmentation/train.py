@@ -40,7 +40,7 @@ def main():
 
     # 初始化模型  
     model = segmentation_model_factory(  
-        model_type='UNetWithReCLIPResNet',   # 'UNetWithReCLIPResNet', ReCLIPResNetSeg, ReCLIPViTSeg, CLIPVITSegmentation
+        model_type='ReCLIPResNetSeg',   # 'UNetWithReCLIPResNet', ReCLIPResNetSeg, ReCLIPViTSeg, CLIPVITSegmentation
         model_name=config['model']['model_name'],  
         ckpt_path=config['paths']['model']['clip_ckpt'],  
         num_classes=config.dataset['num_classes'],  
@@ -80,12 +80,10 @@ def main():
 
     # 训练  
     trainer = UnetTrainer(model, optimizer, scheduler, criterion, exp_dir, config)  
-    best_miou, metrics_history = trainer.train(train_loader, val_loader)  
+    best_miou = trainer.train(train_loader, val_loader)  
 
     logging.info("\n训练总结:")  
     logging.info(f"最佳mIoU: {best_miou:.4f}")  
-    with open(exp_dir / 'final_metrics.json', 'w') as f:  
-        json.dump({'best_miou': float(best_miou), 'metrics_history': metrics_history}, f, indent=4)  
 
 if __name__ == '__main__':  
     main()  

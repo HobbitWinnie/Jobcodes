@@ -15,12 +15,11 @@ class ReCLIPResNetSeg(BaseRemoteCLIPSeg):
     ):  
         super().__init__(
             model_name, 
-            num_classes, 
-            input_size, 
+            in_channels,
+            input_size,
             ckpt_path, 
             freeze_clip,
-            in_channels=in_channels,  
-            device_ids=device_ids,  
+            device_ids,  
         )  
               
         # 适配conv1输出通道与adapter输入通道  
@@ -35,7 +34,7 @@ class ReCLIPResNetSeg(BaseRemoteCLIPSeg):
 
     def forward(self, x):  
         self._validate_input(x)  
-        x = x.to(self.main_device)  
+        # x = x.to(self.main_device)  
         x = self.encoder.conv1(x)  
         x = self.encoder.bn1(x)  
         x = self.encoder.act1(x)  

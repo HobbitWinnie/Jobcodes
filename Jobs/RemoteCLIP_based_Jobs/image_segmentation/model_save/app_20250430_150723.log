@@ -1,3 +1,0 @@
-2025-04-30 15:07:24,042 - INFO - Main device: cuda:1
-2025-04-30 15:07:24,044 - INFO - Loaded RN50 model config.
-2025-04-30 15:07:25,681 - INFO - Enabled multi-GPU training on devices [1, 2, 3]

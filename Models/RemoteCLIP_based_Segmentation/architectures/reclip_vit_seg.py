@@ -15,13 +15,13 @@ class ReCLIPViTSeg(BaseRemoteCLIPSeg):
         device_ids=None,  
     ):  
         super().__init__(  
-            model_name=model_name,  
-            num_classes=num_classes,  
-            input_size=input_size,  
-            ckpt_path=ckpt_path,  
-            freeze_clip=freeze_clip,  
-            in_channels=in_channels,  
-            device_ids=device_ids
+            model_name,  
+            num_classes,  
+            input_size,  
+            ckpt_path,  
+            freeze_clip,              
+            device_ids,
+            in_channels
         )  
 
         # 对于ViT，emb维度可从transformer.width获得  
@@ -34,7 +34,7 @@ class ReCLIPViTSeg(BaseRemoteCLIPSeg):
 
     def forward(self, x):  
         self._validate_input(x)  
-        x = x.to(self.main_device)  
+        # x = x.to(self.main_device)  
         x = self._forward_features(x)  # [batch, num_patches+1, emb_dim]  
         x = x[:, 1:, :]  # 去掉CLS  
         batch_size, num_patches, embed_dim = x.size()  
