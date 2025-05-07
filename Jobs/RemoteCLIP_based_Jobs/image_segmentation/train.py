@@ -2,6 +2,7 @@ import sys
 sys.path.append('/home/nw/Codes')  
 
 import logging  
+from datetime import datetime
 from pathlib import Path  
 import json  
 import torch.optim as optim  
@@ -10,7 +11,7 @@ from torch.optim.lr_scheduler import CosineAnnealingWarmRestarts
 from Models.RemoteCLIP_based_Segmentation.modules.combined_loss import CombinedLoss
 from Models.RemoteCLIP_based_Segmentation.factory import segmentation_model_factory  
 from engine.base_trainer import BaseTrainer  
-from engine.unet_trainer import UnetTrainer
+from engine.trainer import Trainer
 from config.config import get_config        
 from utils.set_logging import setup_logging  
 from data.dataset import create_dataloaders  
@@ -31,23 +32,25 @@ def main():
     config = get_config()  
     
     # 设置日志
-    exp_dir = Path(config['paths']['model']['save_dir'])  
+    # exp_dir = Path(config['paths']['model']['save_dir'])  
+    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+    exp_dir = Path(__file__).parent/'model_save'/ timestamp
     exp_dir.mkdir(parents=True, exist_ok=True)      
+    
     with open(exp_dir / 'config.json', 'w') as f:  
         json.dump(path_to_str(config.config), f, indent=4)  
-
     setup_logging(exp_dir)  
-
+ 
     # 初始化模型  
     model = segmentation_model_factory(  
-        model_type='ReCLIPResNetSeg',   # 'UNetWithReCLIPResNet', ReCLIPResNetSeg, ReCLIPViTSeg, CLIPVITSegmentation
+        model_type='ReCLIPViTSeg',   # 'UNetWithReCLIPResNet', ReCLIPResNetSeg, ReCLIPViTSeg, CLIPVITSegmentation
         model_name=config['model']['model_name'],  
         ckpt_path=config['paths']['model']['clip_ckpt'],  
         num_classes=config.dataset['num_classes'],  
         dropout_rate=0.2,  
         use_aux_loss=True,  
         initial_features=32,  
-        device_ids=[1, 2, 3],
+        device_ids=[0, 1],
         in_channels = 4  
     )  
 
@@ -79,7 +82,7 @@ def main():
     )  
 
     # 训练  
-    trainer = UnetTrainer(model, optimizer, scheduler, criterion, exp_dir, config)  
+    trainer = Trainer(model, optimizer, scheduler, criterion, exp_dir, config)  
     best_miou = trainer.train(train_loader, val_loader)  
 
     logging.info("\n训练总结:")  

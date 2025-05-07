@@ -17,25 +17,23 @@ class CLIPVITSegmentation(BaseRemoteCLIPSeg):
     ):  
         super().__init__(
             model_name, 
-            num_classes, 
-            input_size, 
+            in_channels,  
+            input_size,
             ckpt_path, 
             freeze_clip,
-            in_channels,  
-            device_ids,  
+            device_ids
         )  
 
         embed_dim = self.encoder.transformer.width  
-        self.final_conv = nn.Conv2d(embed_dim, num_classes, kernel_size=1).to(self.main_device)  
-        self.text_to_visual = nn.Linear(768, embed_dim).to(self.main_device)  
+        self.final_conv = nn.Conv2d(embed_dim, num_classes, kernel_size=1)
 
         # 采用openai公开权重  
         model, _, _ = open_clip.create_model_and_transforms(model_name, pretrained='openai')  
         self.text_encoder = model.encode_text  
         self.tokenizer = open_clip.get_tokenizer(model_name)  
+        self.text_to_visual = nn.Linear(768, embed_dim)
 
     def forward(self, x, text):  
-        # x = x.to(self.main_device)  
         self._validate_input(x)  
         
         visual_feat = self._forward_features(x)[:, 1:, :]  
@@ -63,25 +61,27 @@ class CLIPVITSegmentation(BaseRemoteCLIPSeg):
         输入x: [B, C, H, W]  
         输出：Transformer每个patch和cls的特征 [B, N_patches+1, embed_dim]  
         """  
-        x = self.encoder.conv1(x)   # -> [B, embed, H', W']  
-        x = x.reshape(x.shape[0], x.shape[1], -1)                   # [B, embed, PatchNum]  
-        x = x.permute(0, 2, 1)                                      # [B, PatchNum, embed_dim]  
-        cls_token = self.encoder.class_embedding.to(x.dtype).to(self.main_device) + \
-            torch.zeros(x.shape[0], 1, x.shape[-1], dtype=x.dtype, device=self.main_device)  
-        x = torch.cat([cls_token, x], dim=1)                        # [B, PatchNum+1, embed_dim]  
-        x = x + self.encoder.positional_embedding.to(x.dtype).to(self.main_device)  
-        x = self.encoder.ln_pre(x)  
-        x = x.permute(1, 0, 2)                                      # [PatchNum+1, B, embed_dim]  
-        x = self.encoder.transformer(x)  
-        x = x.permute(1, 0, 2)                                      # [B, PatchNum+1, embed_dim]  
+        enc = self.encoder  
+        x = enc.conv1(x)  # [B, embed_dim, h', w']  
+        x = x.reshape(x.shape[0], x.shape[1], -1)  # [B, C, N_patch]  
+        x = x.permute(0, 2, 1)  # [B, N_patch, embed_dim]  
+
+        # 添加 [CLS]，全部用 x.device  
+        cls_token = enc.class_embedding.to(dtype=x.dtype, device=x.device) \
+            .unsqueeze(0).expand(x.shape[0], -1, -1)  
+        x = torch.cat([cls_token, x], dim=1)  
+        pos_embed = enc.positional_embedding.to(dtype=x.dtype, device=x.device)  
+        x = x + pos_embed  
+        x = enc.ln_pre(x)  
+        x = x.permute(1, 0, 2)  
+        x = enc.transformer(x)  
+        x = x.permute(1, 0, 2)  
         return x  
 
     def _forward_text(self, text):  
-        """  
-        文本编码成特征，[B, 768]  
-        """  
         if not isinstance(text, list):  
             text = list(text)  
-        text_tokens = self.tokenizer(text).to(self.main_device)  
-        text_feat = self.text_encoder(text_tokens).to(self.main_device)  
-        return text_feat
+        device = next(self.parameters()).device  
+        text_tokens = self.tokenizer(text).to(device)  
+        text_feat = self.text_encoder(text_tokens)  
+        return text_feat  

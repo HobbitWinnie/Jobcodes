@@ -102,19 +102,13 @@ class UNetWithReCLIPResNet(BaseRemoteCLIPSeg):
                 nn.Conv2d(encoder_channels[-1] // 2, num_classes, 1)  
             )  
         self.initialize_weights()  
-        super().to(self.main_device)  
 
     def forward(self, x):  
         # 数据验证
         self._validate_input(x)  
 
-        # with torch.cuda.amp.autocast():  
-            # 提取各层特征
-        features = self.extract_encoder_features(x)  
-            # 特征变换
-            # for t, f in zip(self.feature_transforms, features):  
-            #     print("feature:", f.dtype, "weight:", t.weight.dtype, "bias:", t.bias.dtype if t.bias is not None else None)  
-            
+        # 提取各层特征
+        features = self.extract_encoder_features(x)              
         features = [t(f) for t, f in zip(self.feature_transforms, features)]  
 
         # 跳跃连接和decode

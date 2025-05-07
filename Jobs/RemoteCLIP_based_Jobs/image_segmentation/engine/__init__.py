@@ -1,7 +1,7 @@
 from .base_trainer import BaseTrainer
-from .unet_trainer import UnetTrainer  
+from .trainer import Trainer  
 
 __all__ = [  
     'BaseTrainer',   
-    'UnetTrainer',   
+    'Trainer',   
 ]  

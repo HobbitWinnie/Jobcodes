@@ -34,7 +34,6 @@ class ReCLIPResNetSeg(BaseRemoteCLIPSeg):
 
     def forward(self, x):  
         self._validate_input(x)  
-        # x = x.to(self.main_device)  
         x = self.encoder.conv1(x)  
         x = self.encoder.bn1(x)  
         x = self.encoder.act1(x)  

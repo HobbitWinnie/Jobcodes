@@ -1,5 +1,0 @@
-2025-05-06 11:35:23,492 - INFO - Main device: cuda:1
-2025-05-06 11:35:23,493 - INFO - Loaded RN50 model config.
-2025-05-06 11:35:25,128 - INFO - [Factory] Enabled multi-GPU DataParallel on devices: [1, 2, 3]
-2025-05-06 11:36:17,977 - INFO - Epoch 1/20000 [28.29s], Training: [1.6220 (Focal: 0.6644, Dice: 0.9576, AuxFocal: 0.0000, AuxDice: 0.0000)], Validation: [1.5826 (Focal: 0.6263, Dice: 0.9562, AuxFocal: 0.0000, AuxDice: 0.0000), Acc = 0.6151, mIoU = 0.0884], LR: 0.000010
-2025-05-06 11:36:18,570 - INFO - 保存最佳模型 (mIoU: 0.0884)

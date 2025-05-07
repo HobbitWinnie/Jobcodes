@@ -38,7 +38,7 @@ class Config:
                 },  
                 'model': {  
                     'save_dir': '/home/nw/Codes/Jobs/RemoteCLIP_based_Jobs/image_segmentation/model_save',  
-                    'clip_ckpt': '/home/nw/Assets/RemoteCLIP/ckpt/RemoteCLIP-RN50.pt',   # RemoteCLIP-RN50, RemoteCLIP-ViT-L-14
+                    'clip_ckpt': '/home/nw/Assets/RemoteCLIP/ckpt/RemoteCLIP-ViT-L-14.pt',   # RemoteCLIP-RN50, RemoteCLIP-ViT-L-14
                 },  
                 'input': {  
                     'train_image': 'GF2_train_image.tif',  
@@ -60,7 +60,7 @@ class Config:
             },  
             'model': {  
                 'model_type':'CLIPVITSegmentation',
-                'model_name': 'RN50' , # 'RN50', 'ViT-L-14'
+                'model_name': 'ViT-L-14' , # 'RN50', 'ViT-L-14'
                 'in_channels': 4,  
                 'initial_features': 128,  
                 'dropout_rate': 0.2,  
