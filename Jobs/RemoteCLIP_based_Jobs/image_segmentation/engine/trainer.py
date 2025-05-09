@@ -60,9 +60,7 @@ class Trainer:
             if isinstance(text, str):
                 text = [text] * images.shape[0]
             elif isinstance(text, (tuple, list)):
-                text = list(text)
-            else:
-                raise RuntimeError(f"text类型异常: {type(text)}")
+                text = [str(t) for t in text]  # 假设张量存储的是文本索引  
             if len(text) != images.shape[0]:
                 raise RuntimeError(f"text与图像batch不符: text({len(text)}), images({images.shape[0]})")
             return text
@@ -75,15 +73,18 @@ class Trainer:
         images, masks = batch[0].to(self.device), batch[1].to(self.device)
         text = self._process_text_batch(batch, images)
         self.optimizer.zero_grad(set_to_none=True)
+        
         with autocast():
             outputs = self.model(images, text) if text is not None else self.model(images)
-            loss, loss_info = self.compute_total_loss(outputs, masks)
+            loss, loss_info = self.compute_total_loss(outputs, masks)        
         if not torch.isfinite(loss):
             raise ValueError(f"检测到无效loss：{loss.item()}")
-        self.scaler.scale(loss).backward()
+       
+        self.scaler.scale(loss).backward()        
         if self.config['training'].get('max_grad_norm', 1.0) > 0:
             self.scaler.unscale_(self.optimizer)
             torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.config['training'].get('max_grad_norm', 1.0))
+        
         self.scaler.step(self.optimizer)
         self.scaler.update()
         return loss.item(), loss_info
@@ -150,6 +151,7 @@ class Trainer:
     def _validate_one_batch(self, batch, class_metrics, confusion_matrix, num_classes, val_loss):
         images, masks = batch[0].to(self.device), batch[1].to(self.device)
         text = self._process_text_batch(batch, images)
+
         with torch.no_grad(), autocast():
             outputs = self.model(images, text) if text is not None else self.model(images)
             loss, loss_info = self.compute_total_loss(outputs, masks)
