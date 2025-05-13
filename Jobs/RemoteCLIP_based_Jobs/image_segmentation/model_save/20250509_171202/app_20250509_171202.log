@@ -1,4 +1,0 @@
-2025-05-09 17:12:03,259 - INFO - Main device: cuda:0
-2025-05-09 17:12:03,260 - INFO - Loaded ViT-L-14 model config.
-2025-05-09 17:13:20,221 - INFO - Epoch 1/20000 [25.57s], Training: [1.2017 (Focal: 0.3004, Dice: 0.9014, AuxFocal: 0.0000, AuxDice: 0.0000)], Validation: [1.0317 (Focal: 0.1532, Dice: 0.8785, AuxFocal: 0.0000, AuxDice: 0.0000), Acc = 0.7274, mIoU = 0.0846], LR: 0.000010
-2025-05-09 17:13:22,310 - INFO - 保存最佳模型 (mIoU: 0.0846)

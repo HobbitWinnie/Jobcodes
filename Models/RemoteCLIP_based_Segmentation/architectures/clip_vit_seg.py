@@ -30,6 +30,11 @@ class CLIPVITSegmentation(BaseRemoteCLIPSeg):
         self.text_to_visual = nn.Linear(768, self.embed_dim)  
         # 最终分类卷积  
         self.final_conv = nn.Conv2d(self.embed_dim, num_classes, kernel_size=1)  
+        
+        if freeze_clip:  
+            for param in self.text_to_visual.parameters():  
+                param.requires_grad = True  
+
 
     def forward(self, x, text):  
         x = x.to(self.main_device)  
@@ -43,7 +48,7 @@ class CLIPVITSegmentation(BaseRemoteCLIPSeg):
         text_feat = self._forward_text(text)  # 必须返回[B, D_text]  
         text_feat = self.text_to_visual(text_feat)  # [B, D_vis]  
         
-        # 维度对齐（关键修复点）  
+        # 维度对齐
         text_feat = text_feat.unsqueeze(1)          # [B, 1, D]  
         text_feat = text_feat.expand(B, num_patches, D)  # 显式指定维度  
         
@@ -120,18 +125,3 @@ class CLIPVITSegmentation(BaseRemoteCLIPSeg):
         x = x.permute(1, 0, 2)  # [N+1, B, D]  
         x = enc.transformer(x)  
         return x.permute(1, 0, 2)  # [B, N+1, D]  
-
-# def test_forward_shape():  
-#     model = CLIPVITSegmentation("ViT-L-14").cuda()  
-
-#     # 测试不同批次大小  
-#     for B in [1, 4, 8]:  
-#         x = torch.randn(B, 4, 224, 224).cuda()  
-#         text = ["a photo of cat"] * B  
-        
-#         out = model(x, text)  
-#         assert out.shape == (B, 9, 224, 224), f"Batch {B} 输出形状错误: {out.shape}"  
-        
-#     print("前向传播形状测试通过！")  
-
-# test_forward_shape()  

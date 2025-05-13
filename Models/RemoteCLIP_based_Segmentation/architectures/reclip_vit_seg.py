@@ -25,19 +25,16 @@ class ReCLIPViTSeg(BaseRemoteCLIPSeg):
             freeze_clip,
             device_ids,  
         )
-        self.prompt_tmpl = prompt_tmpl          
+        self.prompt_tmpl = prompt_tmpl         
 
-    @torch.no_grad()  
-    def _build_text_features(self, class_names, device=None):  
-        """  
-        根据类别名动态生成文本特征  
-        """  
-        device = device or self.main_device  
-        prompts = [self.prompt_tmpl.format(c) for c in class_names]  
-        text_tokens = open_clip.tokenizer.tokenize(prompts).to(device)  
-        text_features = self.text_encoder(text_tokens)  
-        text_features = text_features / text_features.norm(dim=-1, keepdim=True)  
-        return text_features # [num_classes, dim]  
+        # 新增文本投影层  
+        self.text_to_visual = nn.Linear(768, 
+            self.encoder.transformer.width  # 视觉维度（如768）  
+        )  
+
+        # if freeze_clip:  
+        #     for param in self.text_to_visual.parameters():  
+        #         param.requires_grad = True  
 
     def forward(self, x, class_names):  
         """  
@@ -84,22 +81,46 @@ class ReCLIPViTSeg(BaseRemoteCLIPSeg):
                     )  
                 results.append(logits[0])  # [K, H, W]  
             return results  # list of [K, H, W]  
-        
+           
     def _forward_features(self, x):  
-        # Patch Embedding  
+        """ 与CLIPVITSegmentation保持一致的维度处理 """  
         enc = self.encoder  
-        x = enc.conv1(x)  # [batch, emb_dim, grid, grid]  
-        x = x.reshape(x.shape[0], x.shape[1], -1)   # [batch, emb, num_patches]  
-        x = x.permute(0, 2, 1)  # [batch, num_patches, emb]  
-       
-        # 添加 [CLS]  
-        cls_token = enc.class_embedding.to(x.dtype).unsqueeze(0).expand(x.shape[0], -1, -1).to(x.device)  
-        x = torch.cat([cls_token, x], dim=1)          
-        # 位置编码，同样用x.device  
-        x = x + enc.positional_embedding.to(x.dtype).to(x.device)  
-        x = enc.ln_pre(x) 
-        # ViT主干  
-        x = x.permute(1, 0, 2)    # [num_patches+1, batch, emb]  
+        
+        # 分块嵌入 (保持官方实现结构)  
+        x = enc.conv1(x)  # [B, D, h, w]  
+        B, D, h, w = x.shape  
+        x = x.flatten(2).permute(0, 2, 1)  # [B, N, D]  
+        
+        # CLS token处理 (显式设备同步)  
+        cls_token = enc.class_embedding.to(device=x.device, dtype=x.dtype)  
+        cls_token = cls_token[None, None, :].expand(B, -1, -1)  # [B,1,D]  
+        
+        # 拼接并添加位置编码  
+        x = torch.cat([cls_token, x], dim=1)  # [B, N+1, D]  
+        pos_embed = enc.positional_embedding[:x.size(1)].to(x.device)  
+        x += pos_embed[None, :, :]  # 正确广播维度  
+        
+        # Transformer处理流程  
+        x = enc.ln_pre(x)  
+        x = x.permute(1, 0, 2)  # [N+1, B, D]  
         x = enc.transformer(x)  
-        x = x.permute(1, 0, 2)    # [batch, num_patches+1, emb]  
-        return x  
+        return x.permute(1, 0, 2)  # [B, N+1, D]  
+
+    # @torch.no_grad()  
+    def _build_text_features(self, class_names, device=None):  
+        """ 仅在文本特征提取后添加投影 """  
+        device = device or self.main_device  
+        prompts = [self.prompt_tmpl.format(c) for c in class_names]  
+        
+        # 原有处理流程保持不变  
+        text_tokens = self.tokenizer(prompts).to(device)  
+        x = self.token_embedding(text_tokens)  
+        x += self.positional_embedding.to(device)  
+        x = x.permute(1, 0, 2)  
+        text_features = self.text_encode(x)  
+        eot_indices = text_tokens.argmax(dim=-1)  
+        text_features = text_features[eot_indices, torch.arange(x.size(1)), :]  
+        
+        # 新增投影层应用（核心修正）  
+        projected_text = self.text_to_visual(text_features)  # [K, 768]  
+        return projected_text / projected_text.norm(dim=-1, keepdim=True)  
