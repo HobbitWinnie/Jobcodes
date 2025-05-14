@@ -1,9 +1,0 @@
-2025-05-13 14:44:14,113 - INFO - Main device: cuda:3
-2025-05-13 14:44:14,115 - INFO - Loaded ViT-L-14 model config.
-2025-05-13 14:48:23,724 - ERROR - [Epoch 0 Batch 0] 训练出错: RuntimeError('Given normalized_shape=[768], expected input with shape [*, 768], but got input of size[96, 77]')
-2025-05-13 14:49:13,211 - ERROR - [Epoch 0 Batch 1] 训练出错: RuntimeError('Given normalized_shape=[768], expected input with shape [*, 768], but got input of size[96, 77]')
-2025-05-13 14:49:33,839 - ERROR - [Epoch 0 Batch 2] 训练出错: RuntimeError('Given normalized_shape=[768], expected input with shape [*, 768], but got input of size[96, 77]')
-2025-05-13 14:49:38,044 - ERROR - [Epoch 0 Batch 3] 训练出错: RuntimeError('Given normalized_shape=[768], expected input with shape [*, 768], but got input of size[96, 77]')
-2025-05-13 14:49:42,721 - ERROR - [Epoch 0 Batch 4] 训练出错: RuntimeError('Given normalized_shape=[768], expected input with shape [*, 768], but got input of size[96, 77]')
-2025-05-13 14:51:03,943 - ERROR - [Epoch 0 Batch 5] 训练出错: RuntimeError('Given normalized_shape=[768], expected input with shape [*, 768], but got input of size[96, 77]')
-2025-05-13 14:51:05,828 - ERROR - [Epoch 0 Batch 6] 训练出错: RuntimeError('Given normalized_shape=[768], expected input with shape [*, 768], but got input of size[96, 77]')

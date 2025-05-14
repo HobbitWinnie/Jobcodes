@@ -11,7 +11,7 @@ class CLIPVITSegmentation(BaseRemoteCLIPSeg):
         num_classes=9,  
         input_size=224,  
         ckpt_path=None,  
-        freeze_clip=True,  
+        freeze_clip=False,  
         in_channels=4,  
         device_ids=None,  
     ):  
@@ -31,11 +31,6 @@ class CLIPVITSegmentation(BaseRemoteCLIPSeg):
         # 最终分类卷积  
         self.final_conv = nn.Conv2d(self.embed_dim, num_classes, kernel_size=1)  
         
-        if freeze_clip:  
-            for param in self.text_to_visual.parameters():  
-                param.requires_grad = True  
-
-
     def forward(self, x, text):  
         x = x.to(self.main_device)  
         self._validate_input(x)  

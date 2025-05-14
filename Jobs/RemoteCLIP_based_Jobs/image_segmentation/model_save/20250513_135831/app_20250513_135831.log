@@ -1,3 +1,0 @@
-2025-05-13 13:58:32,072 - INFO - Main device: cuda:3
-2025-05-13 13:58:32,073 - INFO - Loaded ViT-L-14 model config.
-2025-05-13 14:00:31,255 - ERROR - [Epoch 0 Batch 0] 训练出错: RuntimeError('Given normalized_shape=[768], expected input with shape [*, 768], but got input of size[96, 77]')

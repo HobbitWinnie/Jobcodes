@@ -30,6 +30,7 @@ class ReCLIPResNetSeg(BaseRemoteCLIPSeg):
             nn.BatchNorm2d(64),  
             nn.ReLU(inplace=True)  
         ).to(self.main_device)  
+        
         self.final_conv = nn.Conv2d(out_c, num_classes, 1).to(self.main_device)  
 
     def forward(self, x):  

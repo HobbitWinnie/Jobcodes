@@ -12,7 +12,7 @@ class BaseRemoteCLIPSeg(nn.Module):
         in_channels=4,  
         input_size=224,  
         ckpt_path=None,  
-        freeze_clip=True,  
+        freeze_clip=False,  
         device_ids=None,  
         logger=None,  
     ):  
@@ -30,7 +30,6 @@ class BaseRemoteCLIPSeg(nn.Module):
 
         # 初始化主干  
         self._init_and_patch_encoder(model_name, in_channels, ckpt_path, freeze_clip)  
-    
         self.encoder_channels = self._get_encoder_channels()  
 
     def _init_and_patch_encoder(self, model_name, in_channels, ckpt_path, freeze_clip):  

@@ -43,15 +43,15 @@ def main():
  
     # 初始化模型  
     model = segmentation_model_factory(  
-        model_type='ReCLIPViTSeg',   # 可选的还有：'UNetWithReCLIPResNet', ReCLIPResNetSeg, ReCLIPViTSeg, CLIPVITSegmentation
+        model_type='CLIPVITSegmentation',   # 可选的还有：'UNetWithReCLIPResNet', ReCLIPResNetSeg, ReCLIPViTSeg, CLIPVITSegmentation
         model_name=config['model']['model_name'],  
         ckpt_path=config['paths']['model']['clip_ckpt'],  
         num_classes=config.dataset['num_classes'],  
         dropout_rate=0.2,  
-        use_aux_loss=True,  
         initial_features=32,  
         device_ids=[3],
-        in_channels = 4  
+        in_channels = 4,
+        freeze_clip = False,
     )  
 
     #

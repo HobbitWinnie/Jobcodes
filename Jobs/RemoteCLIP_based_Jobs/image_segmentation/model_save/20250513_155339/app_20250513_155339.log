@@ -1,3 +1,0 @@
-2025-05-13 15:53:39,914 - INFO - Main device: cuda:3
-2025-05-13 15:53:39,915 - INFO - Loaded ViT-L-14 model config.
-2025-05-13 15:56:51,627 - ERROR - [Epoch 0 Batch 0] 训练出错: RuntimeError('element 0 of tensors does not require grad and does not have a grad_fn')
