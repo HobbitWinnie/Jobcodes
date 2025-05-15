@@ -1,7 +1,0 @@
-2025-05-14 11:02:25,076 - INFO - Main device: cuda:3
-2025-05-14 11:02:25,078 - INFO - Loaded ViT-L-14 model config.
-2025-05-14 11:04:42,631 - INFO - Epoch 1/20000 [90.07s], Training: [3.0361 (Focal: 2.0368, Dice: 0.9993, AuxFocal: 0.0000, AuxDice: 0.0000)], Validation: [3.0335 (Focal: 2.0345, Dice: 0.9989, AuxFocal: 0.0000, AuxDice: 0.0000), Acc = 0.0810, mIoU = 0.0141], LR: 0.000010
-2025-05-14 11:04:44,515 - INFO - 保存最佳模型 (mIoU: 0.0141)
-2025-05-14 11:06:37,261 - INFO - Epoch 2/20000 [79.78s], Training: [3.0204 (Focal: 2.0211, Dice: 0.9993, AuxFocal: 0.0000, AuxDice: 0.0000)], Validation: [2.9517 (Focal: 1.9527, Dice: 0.9989, AuxFocal: 0.0000, AuxDice: 0.0000), Acc = 0.0810, mIoU = 0.0141], LR: 0.000010
-2025-05-14 11:08:28,479 - INFO - Epoch 3/20000 [78.28s], Training: [2.9901 (Focal: 1.9908, Dice: 0.9993, AuxFocal: 0.0000, AuxDice: 0.0000)], Validation: [2.9729 (Focal: 1.9740, Dice: 0.9989, AuxFocal: 0.0000, AuxDice: 0.0000), Acc = 0.0810, mIoU = 0.0141], LR: 0.000010
-2025-05-14 11:10:19,562 - INFO - Epoch 4/20000 [78.28s], Training: [2.9883 (Focal: 1.9890, Dice: 0.9992, AuxFocal: 0.0000, AuxDice: 0.0000)], Validation: [2.9738 (Focal: 1.9748, Dice: 0.9989, AuxFocal: 0.0000, AuxDice: 0.0000), Acc = 0.0810, mIoU = 0.0141], LR: 0.000010

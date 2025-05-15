@@ -1,0 +1,28 @@
+2025-05-15 16:07:44,286 - INFO - Main device: cuda:2
+2025-05-15 16:07:44,286 - INFO - Loaded RN50 model config.
+2025-05-15 16:07:46,861 - INFO - [Factory] Enabled multi-GPU DataParallel on devices: [2, 3]
+2025-05-15 16:08:48,810 - INFO - Epoch 1/20000 [37.81s], Training: [3.2669 (Focal: 1.0430, Dice: 0.9510, AuxFocal: 2.3280, AuxDice: 0.8543)], Validation: [1.9257 (Focal: 0.5395, Dice: 0.9307, AuxFocal: 0.2569, AuxDice: 0.8820), Acc = 0.3330, mIoU = 0.0673], LR: 0.000010
+2025-05-15 16:08:49,861 - INFO - 保存最佳模型 (mIoU: 0.0673)
+2025-05-15 16:09:50,570 - INFO - Epoch 2/20000 [36.47s], Training: [2.4068 (Focal: 0.8175, Dice: 0.9270, AuxFocal: 0.8681, AuxDice: 0.7876)], Validation: [1.8667 (Focal: 0.5298, Dice: 0.8901, AuxFocal: 0.3476, AuxDice: 0.7695), Acc = 0.4584, mIoU = 0.1049], LR: 0.000010
+2025-05-15 16:09:54,842 - INFO - 保存最佳模型 (mIoU: 0.1049)
+2025-05-15 16:10:55,266 - INFO - Epoch 3/20000 [36.37s], Training: [2.0913 (Focal: 0.6351, Dice: 0.9079, AuxFocal: 0.6028, AuxDice: 0.7679)], Validation: [1.7009 (Focal: 0.3698, Dice: 0.8689, AuxFocal: 0.3970, AuxDice: 0.7585), Acc = 0.6482, mIoU = 0.1378], LR: 0.000010
+2025-05-15 16:10:59,923 - INFO - 保存最佳模型 (mIoU: 0.1378)
+2025-05-15 16:12:00,346 - INFO - Epoch 4/20000 [36.34s], Training: [1.9064 (Focal: 0.5150, Dice: 0.8943, AuxFocal: 0.4911, AuxDice: 0.7517)], Validation: [1.5734 (Focal: 0.2592, Dice: 0.8567, AuxFocal: 0.4077, AuxDice: 0.7362), Acc = 0.7578, mIoU = 0.1582], LR: 0.000010
+2025-05-15 16:12:05,121 - INFO - 保存最佳模型 (mIoU: 0.1582)
+2025-05-15 16:13:05,641 - INFO - Epoch 5/20000 [36.34s], Training: [1.7775 (Focal: 0.4346, Dice: 0.8850, AuxFocal: 0.3988, AuxDice: 0.7459)], Validation: [1.4580 (Focal: 0.2157, Dice: 0.8504, AuxFocal: 0.2749, AuxDice: 0.7050), Acc = 0.7980, mIoU = 0.1635], LR: 0.000010
+2025-05-15 16:13:09,861 - INFO - 保存最佳模型 (mIoU: 0.1635)
+2025-05-15 16:14:10,113 - INFO - Epoch 6/20000 [36.24s], Training: [1.6869 (Focal: 0.3769, Dice: 0.8767, AuxFocal: 0.3486, AuxDice: 0.7345)], Validation: [2.7076 (Focal: 0.1850, Dice: 0.8442, AuxFocal: 3.3614, AuxDice: 0.8346), Acc = 0.8179, mIoU = 0.1679], LR: 0.000010
+2025-05-15 16:14:14,984 - INFO - 保存最佳模型 (mIoU: 0.1679)
+2025-05-15 16:15:15,162 - INFO - Epoch 7/20000 [36.13s], Training: [1.6419 (Focal: 0.3368, Dice: 0.8729, AuxFocal: 0.3515, AuxDice: 0.7289)], Validation: [1.5049 (Focal: 0.1949, Dice: 0.8420, AuxFocal: 0.4778, AuxDice: 0.6923), Acc = 0.8207, mIoU = 0.1638], LR: 0.000010
+2025-05-15 16:16:15,164 - INFO - Epoch 8/20000 [35.96s], Training: [1.5780 (Focal: 0.3057, Dice: 0.8683, AuxFocal: 0.2984, AuxDice: 0.7115)], Validation: [1.3895 (Focal: 0.1543, Dice: 0.8362, AuxFocal: 0.3005, AuxDice: 0.6970), Acc = 0.8309, mIoU = 0.1722], LR: 0.000010
+2025-05-15 16:16:19,903 - INFO - 保存最佳模型 (mIoU: 0.1722)
+2025-05-15 16:17:20,230 - INFO - Epoch 9/20000 [36.28s], Training: [1.5526 (Focal: 0.2829, Dice: 0.8646, AuxFocal: 0.2935, AuxDice: 0.7190)], Validation: [1.3081 (Focal: 0.1350, Dice: 0.8338, AuxFocal: 0.1806, AuxDice: 0.6676), Acc = 0.8340, mIoU = 0.1771], LR: 0.000010
+2025-05-15 16:17:24,863 - INFO - 保存最佳模型 (mIoU: 0.1771)
+2025-05-15 16:18:24,869 - INFO - Epoch 10/20000 [36.05s], Training: [1.5065 (Focal: 0.2532, Dice: 0.8611, AuxFocal: 0.2707, AuxDice: 0.7098)], Validation: [1.7048 (Focal: 0.1346, Dice: 0.8314, AuxFocal: 1.0784, AuxDice: 0.7687), Acc = 0.8353, mIoU = 0.1750], LR: 0.000010
+2025-05-15 16:19:25,146 - INFO - Epoch 11/20000 [36.26s], Training: [1.4673 (Focal: 0.2308, Dice: 0.8573, AuxFocal: 0.2511, AuxDice: 0.6967)], Validation: [1.2992 (Focal: 0.1336, Dice: 0.8285, AuxFocal: 0.1637, AuxDice: 0.6789), Acc = 0.8368, mIoU = 0.1737], LR: 0.000010
+2025-05-15 16:20:25,326 - INFO - Epoch 12/20000 [36.24s], Training: [1.4504 (Focal: 0.2249, Dice: 0.8558, AuxFocal: 0.2364, AuxDice: 0.6879)], Validation: [1.3237 (Focal: 0.1129, Dice: 0.8263, AuxFocal: 0.2647, AuxDice: 0.6966), Acc = 0.8389, mIoU = 0.1811], LR: 0.000010
+2025-05-15 16:20:29,927 - INFO - 保存最佳模型 (mIoU: 0.1811)
+2025-05-15 16:21:29,964 - INFO - Epoch 13/20000 [36.10s], Training: [1.4384 (Focal: 0.2071, Dice: 0.8514, AuxFocal: 0.2523, AuxDice: 0.6974)], Validation: [1.3163 (Focal: 0.1042, Dice: 0.8256, AuxFocal: 0.2929, AuxDice: 0.6732), Acc = 0.8390, mIoU = 0.1831], LR: 0.000010
+2025-05-15 16:21:35,350 - INFO - 保存最佳模型 (mIoU: 0.1831)
+2025-05-15 16:22:35,680 - INFO - Epoch 14/20000 [36.15s], Training: [1.4265 (Focal: 0.2015, Dice: 0.8513, AuxFocal: 0.2461, AuxDice: 0.6883)], Validation: [1.3140 (Focal: 0.0957, Dice: 0.8216, AuxFocal: 0.3015, AuxDice: 0.6902), Acc = 0.8395, mIoU = 0.1856], LR: 0.000010
+2025-05-15 16:22:40,443 - INFO - 保存最佳模型 (mIoU: 0.1856)

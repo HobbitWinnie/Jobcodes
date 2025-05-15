@@ -3,7 +3,6 @@ import torch
 from .architectures.clip_vit_seg import CLIPVITSegmentation  
 from .architectures.reclip_rn50_seg import ReCLIPResNetSeg
 from .architectures.reclip_rn50_unet_seg import UNetWithReCLIPResNet
-from .architectures.reclip_vit_seg import ReCLIPViTSeg  
 
 
 def segmentation_model_factory(model_type, **kwargs):  
@@ -11,7 +10,6 @@ def segmentation_model_factory(model_type, **kwargs):
         'CLIPVITSegmentation': CLIPVITSegmentation,  
         'ReCLIPResNetSeg': ReCLIPResNetSeg,  
         'UNetWithReCLIPResNet': UNetWithReCLIPResNet,  
-        'ReCLIPViTSeg': ReCLIPViTSeg,  
     }  
     if model_type not in model_mapping:  
         raise ValueError(f"Unknown model type: {model_type}")  
