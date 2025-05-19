@@ -43,20 +43,20 @@ def main():
  
     # 初始化模型  
     model = segmentation_model_factory(  
-        model_type='UNetWithReCLIPResNet',   # 可选的还有：'UNetWithReCLIPResNet', ReCLIPResNetSeg, CLIPVITSegmentation
+        model_type=config['model']['model_type'],  
         model_name=config['model']['model_name'],  
         ckpt_path=config['paths']['model']['clip_ckpt'],  
         num_classes=config.dataset['num_classes'],  
         dropout_rate=0.2,  
         initial_features=32,  
-        device_ids=[2, 3],
+        device_ids=[1, 2, 3],
         in_channels = 4,
-        freeze_clip = False,
+        freeze_clip = True,
     )  
 
     #
     optimizer = optim.AdamW(  
-        model.parameters(),  
+        model.parameters(),   
         lr=config['training']['learning_rate'],  
         weight_decay=config['training']['weight_decay'],  
         betas=(0.9, 0.999)  
