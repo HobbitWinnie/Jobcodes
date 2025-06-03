@@ -48,7 +48,7 @@ def main():
         ckpt_path=config['paths']['model']['clip_ckpt'],  
         num_classes=config.dataset['num_classes'],  
         dropout_rate=0.2,  
-        initial_features=32,  
+        # initial_features=128,   # 128
         device_ids=[1, 2, 3],
         in_channels = 4,
         freeze_clip = True,
@@ -59,7 +59,7 @@ def main():
         model.parameters(),   
         lr=config['training']['learning_rate'],  
         weight_decay=config['training']['weight_decay'],  
-        betas=(0.9, 0.999)  
+        betas=(0.9, 0.999)
     )  
     scheduler = CosineAnnealingWarmRestarts(  
         optimizer,  

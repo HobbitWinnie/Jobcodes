@@ -59,14 +59,14 @@ class Config:
                 'num_workers': 4  
             },  
             'model': {  
-                'model_type':'CLIPVITSegmentation',  # 可选的还有：'UNetWithReCLIPResNet', ReCLIPResNetSeg, CLIPVITSegmentation
+                'model_type':'UNetWithReCLIPResNet',  # 可选的还有：'UNetWithReCLIPResNet', ReCLIPResNetSeg, CLIPVITSegmentation
                 'model_name': 'RN50' , # 'RN50', 'ViT-L-14'
                 'in_channels': 4,  
                 'initial_features': 128,  
                 'dropout_rate': 0.2,  
             },  
             'training': {  
-                'epochs': 20000,  
+                'epochs': 2000,  
                 'batch_size': 96,  
                 'learning_rate': 1e-5,  
                 'min_lr': 1e-6,  
