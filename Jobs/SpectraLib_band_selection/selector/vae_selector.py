@@ -33,10 +33,15 @@ class VAE(nn.Module):
         recon = self.decode(z)
         return recon, mu, logvar
 
-def vae_loss(recon_x, x, mu, logvar):
-    recon_loss = nn.MSELoss()(recon_x, x)
+def vae_loss_masked(recon_x, x, mu, logvar):
+    # mask 掩码只对非NaN求误差
+    mask = ~torch.isnan(x)
+    # 让 NaN 位置变为0
+    x_filled = torch.nan_to_num(x, nan=0.0)
+    diff = recon_x - x_filled
+    mse = ((diff ** 2) * mask).sum() / mask.sum()
     kld = -0.5 * torch.mean(1 + logvar - mu.pow(2) - logvar.exp())
-    return recon_loss + kld
+    return mse + kld
 
 def train_vae(X_np, latent_dim=8, epochs=50, batch_size=32, device='cpu'):
     input_dim = X_np.shape[1]
@@ -49,26 +54,27 @@ def train_vae(X_np, latent_dim=8, epochs=50, batch_size=32, device='cpu'):
     for epo in range(epochs):
         for batch, in loader:
             batch = batch.to(device)
-            recon, mu, logvar = model(batch)
-            loss = vae_loss(recon, batch, mu, logvar)
+            recon, mu, logvar = model(torch.nan_to_num(batch, nan=0.0))
+            loss = vae_loss_masked(recon, batch, mu, logvar)
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
     return model
 
 def vae_band_ranking(model, X_np, device='cpu'):
-    """依次mask每个波段，比较重建损失变化"""
+    """依次mask每个波段，比较重建损失变化（掩码NaN兼容）"""
     X = torch.tensor(X_np, dtype=torch.float32).to(device)
     model.eval()
     with torch.no_grad():
-        recon, mu, logvar = model(X)
-        base_loss = nn.MSELoss()(recon, X).item()
+        # base_loss
+        recon, mu, logvar = model(torch.nan_to_num(X, nan=0.0))
+        base_loss = vae_loss_masked(recon, X, mu, logvar).item()
         delta_losses = []
         for d in range(X_np.shape[1]):
             X_mask = X.clone()
-            X_mask[:, d] = 0
-            recon_m, mu_m, logvar_m = model(X_mask)
-            loss = nn.MSELoss()(recon_m, X).item()
+            X_mask[:, d] = float('nan')
+            recon_m, mu_m, logvar_m = model(torch.nan_to_num(X_mask, nan=0.0))
+            loss = vae_loss_masked(recon_m, X, mu_m, logvar_m).item()
             delta_losses.append(loss - base_loss)
         ranked = torch.argsort(torch.tensor(delta_losses), descending=True).cpu().numpy()
     return ranked, delta_losses

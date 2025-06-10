@@ -1,6 +1,7 @@
 # Ignore filefolder
 RemoteCLIP/assets/
 RemoteCLIP/cache/
+SpectraLib_band_selection/eva_clip/
 
 cache/
 

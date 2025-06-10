@@ -4,12 +4,12 @@ from pathlib import Path
 class Config:
     def __init__(self):
         # 目录与路径
-        self.DATA_ROOT = "spectraLib/按地类"
-        self.RESULT_DIR = "result"
+        self.DATA_ROOT = "/home/Dataset/nw/spectraLib/unify"
+        self.RESULT_DIR = "/home/nw/Codes/Jobs/SpectraLib_band_selection/result"
 
         # 波段选择
         self.TOP_N = 5
-        self.BAND_COMB_DIM = 3
+        self.BAND_COMB_DIM = 10
 
         # 评价函数
         self.METRIC_WEIGHTS = (0.5, 0.5, 0.0)
@@ -27,14 +27,14 @@ class Config:
         self.TRANS_BATCH_SIZE = 16
 
         # CLIP参数
-        self.CLIP_TOPK = 2
-        self.CLIP_THRESH = 0.25
+        self.CLIP_TOPK = 1
+        self.CLIP_THRESH = 0.75
 
         # 分类/目标
-        self.DEFAULT_TARGET_LIST = ["农田", "水体", "树木"]
+        self.DEFAULT_TARGET_LIST = ["水稻", "草地", "菜地", '玉米', '建筑', '裸地', '建设用地', '道路', '自然植被', '草地', '高速公路', '塑料大棚']
 
         # 设备与其他
-        self.DEVICE = "cuda"
+        self.DEVICE = "cuda:1"
         self.SEED = 42
 
     def update(self, **kwargs):

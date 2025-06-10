@@ -1,50 +1,69 @@
 import numpy as np
 from sklearn.feature_selection import mutual_info_classif
-from sklearn.model_selection import cross_val_score
+from sklearn.model_selection import cross_val_score, StratifiedKFold
 from sklearn.svm import SVC
 
 def mutual_info_score(X, y):
     """
-    多波段组合与类别的互信息
-    X: (n_samples, n_selected_bands)
-    y: (n_samples,)
+    对于每个特征，仅在非NaN类别评估互信息，最后取均值
     """
-    # MI对每个特征，组合时直接平均
-    mi = mutual_info_classif(X, y, discrete_features=False, random_state=0)
-    return np.mean(mi)
+    X = np.asarray(X)
+    y = np.asarray(y)
+    mi_vals = []
+    for j in range(X.shape[1]):
+        col_mask = ~np.isnan(X[:, j])
+        X_col = X[col_mask, j].reshape(-1, 1)
+        y_col = y[col_mask]
+        if X_col.shape[0] < 2 or len(np.unique(y_col)) < 2:
+            mi_vals.append(0.0)
+        else:
+            mi = mutual_info_classif(X_col, y_col, discrete_features=False, random_state=0)
+            mi_vals.append(mi[0])
+    return float(np.mean(mi_vals))
 
-def svm_cv_score(X, y, cv=5):
+def svm_cv_score(X, y):
     """
-    SVM交叉验证评分，衡量波段集区分力
-    X, y: same as above
+    SVM用NaN填充为0代替（可选择其他值），因为类别均值矩阵没法做掩码训练
     """
-    svm = SVC(kernel='linear')
+    y = np.asarray(y)
+    X_filled = np.nan_to_num(X, nan=0.0)  # 也可用其他填充值
+    if X.shape[0] < 2 or len(np.unique(y)) < 2:
+        return 0.0
     try:
-        scores = cross_val_score(svm, X, y, cv=cv)
-        return scores.mean()
+        clf = SVC(kernel='linear')
+        clf.fit(X_filled, y)
+        score = clf.score(X_filled, y)
+        return float(score)
     except Exception:
         return 0.0
 
 def fisher_criterion(X, y):
     """
-    Fisher判别标准
+    Fisher：每个特征只在非NaN类别评估
     """
-    labels = set(y)
-    means = {l: X[np.array(y) == l].mean(axis=0) for l in labels}
-    n = X.shape[0]
-    overall_mean = X.mean(axis=0)
-    S_b = sum([(np.sum(np.array(y) == l)) * np.square(means[l] - overall_mean) for l in labels])
-    S_w = sum([((X[np.array(y) == l] - means[l]) ** 2).sum(axis=0) for l in labels])
-    fisher_score = S_b.sum() / (S_w.sum() + 1e-12)
-    return fisher_score
+    X = np.asarray(X)
+    y = np.asarray(y)
+    scores = []
+    for j in range(X.shape[1]):
+        col_mask = ~np.isnan(X[:, j])
+        X_col = X[col_mask, j]
+        y_col = y[col_mask]
+        if X_col.shape[0] < 2 or len(np.unique(y_col)) < 2:
+            continue
+        classes = np.unique(y_col)
+        means = [X_col[y_col == c].mean() for c in classes]
+        counts = [np.sum(y_col == c) for c in classes]
+        overall_mean = X_col.mean()
+        S_b = sum([counts[k] * (means[k] - overall_mean) ** 2 for k in range(len(classes))])
+        S_w = sum([((X_col[y_col == c] - means[k]) ** 2).sum() for k, c in enumerate(classes)])
+        if S_w > 0:
+            scores.append(S_b / (S_w + 1e-12))
+    return float(np.mean(scores)) if scores else 0.0
 
 def composite_score(X, y, weights=(0.5, 0.5, 0.0)):
-    """
-    综合评价函数：加权和，weights = (互信息, SVM, Fisher)
-    """
-    mi = mutual_info_score(X, y)
-    svm = svm_cv_score(X, y)
-    fisher = fisher_criterion(X, y)
+    mi    = mutual_info_score(X, y)
+    svm   = svm_cv_score(X, y)
+    fisher= fisher_criterion(X, y)
     w_mi, w_svm, w_fisher = weights
     score = w_mi * mi + w_svm * svm + w_fisher * fisher
     return score, {"mutual_info": mi, "svm_cv": svm, "fisher": fisher}
