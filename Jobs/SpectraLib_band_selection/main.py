@@ -1,156 +1,147 @@
-import pandas as pd
+import sys
+sys.path.append('/home/nw/Codes/Jobs/SpectraLib_band_selection')
+
 import os
-
-from config import cfg
-from dataset_loader import load_spectral_library
-from selector.selectors import BandSelector
-from selector.selectors_auto import rfe_band_select, rf_band_select, lsvc_band_select
-from selector.vae_selector import train_vae, vae_band_ranking
-from selector.transformer_selector import train_transformer, transformer_band_ranking
-from evaluator import composite_score
-from clip_semantic import CNCLIPSemanticMatcher, EVACLIPSemanticMatcher, Text2VecSemanticMatcher, EnsembleSemanticMatcher
-from utils import pretty_print_clip_match
-from sklearn.preprocessing import LabelEncoder
-import matplotlib.pyplot as plt
+import pandas as pd
 import numpy as np
+from config import cfg
+from utils import pretty_print_clip_match, plot_selected_bands
+from dataset_loader import load_spectral_library
+from selector.single_band_select import (
+    variance_band_select, 
+    range_band_select, 
+    report_result_simple, 
+)
+from selector.combined_select import greedy_band_combination
+from semantic_matcher.Ensemble_semantic_matcher import (
+    EVACLIPSemanticMatcher, 
+    Text2VecSemanticMatcher, 
+    EnsembleSemanticMatcher
+)
 
-
-def plot_mean_spectra(X_mean, y_mean, fname='class_means.png'):
+def prepare_data():
     """
-    X_mean: numpy数组，形状 [类别数, 特征数]
-    y_mean: 类别标签，可以为 str/int/label 列表
-    fname: 保存文件名
+    数据加载和标签摘取函数
+    读取原始高光谱库，得到X（样本×波段），
+    labels（每个样本的合并标签），
+    label_set（全体类别名集合，无重复），
+    meta（包含wavelength等元数据信息）
     """
-    plt.figure(figsize=(10, 6))
-    x_axis = np.arange(X_mean.shape[1])  # 横坐标为波段索引或波长值，假如有就传（可自定义）
-
-    for idx, (label, row) in enumerate(zip(y_mean, X_mean)):
-        plt.plot(x_axis, row, label=str(label), linewidth=2)
-
-    # plt.rcParams['font.sans-serif'] = ['SimHei']  # 或其它中文字体
-    # plt.rcParams['axes.unicode_minus'] = False
-    plt.xlabel("波段索引")
-    plt.ylabel("均值")
-    plt.title("不同类别的均值光谱曲线")
-    plt.legend()
-    plt.tight_layout()
-    plt.savefig(fname, dpi=200)
-    plt.close()
-
-
-def run_selectors(X, y, topk, device):
-    results = {}
-
-    # # 1. 暴力穷举组合
-    # band_selector = BandSelector(band_count=X.shape[1], comb_dim=topk)
-    # top_combos = band_selector.recommend(X, y, top_n=1)
-    # results['Exhaustive'] = list(top_combos[0][0]) if top_combos else []
-    # print("\n暴力穷举选择完成")
-
-    #  VAE
-    vae_model = train_vae(
-        X, latent_dim=cfg.VAE_LATENT_DIM, epochs=cfg.VAE_EPOCHS,
-        batch_size=cfg.VAE_BATCH_SIZE, device=device)
-    vae_ranked, _ = vae_band_ranking(vae_model, X, device=device)
-    results['VAE'] = list(vae_ranked[:topk])
-    print("\n VAE选择完成")
-
-    # Transformer
-    transformer_model = train_transformer(
-        X, embed_dim=cfg.TRANS_EMBED_DIM, epochs=cfg.TRANS_EPOCHS,
-        batch_size=cfg.TRANS_BATCH_SIZE, device=device
-    )
-    transformer_ranked, _ = transformer_band_ranking(transformer_model, X, device=device)
-    results['Transformer'] = list(transformer_ranked[:topk])
-    print("\n Transformer选择完成")
-
-    # RFE
-    idx_rfe, _ = rfe_band_select(X, y, n_features=topk)
-    results['RFE'] = list(idx_rfe)
-    print("\n RFE选择完成")
-
-    # 随机森林
-    idx_rf, _ = rf_band_select(X, y, n_features=topk)
-    results['RandomForest'] = list(idx_rf)
-    print("\n 随机森林选择完成")
-
-    # # Linear SVC
-    # idx_lsvc, _ = lsvc_band_select(X, y, n_features=topk)
-    # results['LinearSVC'] = list(idx_lsvc)
-    # print("\n Linear SVC选择完成")
-
-    return results
-
-def report_result(method_band_dict, X, y):
-    report = []
-    for method, bands in method_band_dict.items():
-        X_sub = X[:, bands]
-        score, metrics = composite_score(X_sub, y, weights=cfg.METRIC_WEIGHTS)
-        report.append({
-            'Method': method,
-            'BandIdx': bands,
-            'CompositeScore': score,
-            **metrics
-        })
-    return pd.DataFrame(report)
-
-
-if __name__ == "__main__":
-    # 1. 显示与保存当前参数 
+    # 配置显示和保存
     cfg.show()
     cfg.save()
-
-    # 2. 加载数据
+    # 加载主数据
     X, y_info, meta = load_spectral_library(cfg.DATA_ROOT)
-    labels = [item['merged_label'] for item in y_info]          #还有class1，class2，merged_label
+    labels = [item['merged_label'] for item in y_info]
     label_set = sorted(list(set(labels)))
+    return X, labels, label_set, meta
 
-    # 3. 利用CLIP语义匹配目标类别  
+def semantic_label_matching(label_set):
+    """
+    用CLIP+Text2Vec做目标类别的语义匹配，获得目标对应的标签集合。
+    返回：被选中的最终标签列表
+    """
     matcher_1 = EVACLIPSemanticMatcher(device=cfg.DEVICE)
     matcher_2 = Text2VecSemanticMatcher(device=cfg.DEVICE)
     matcher = EnsembleSemanticMatcher(matcher_1, matcher_2, mode='mean')
     clip_match = matcher.match(cfg.DEFAULT_TARGET_LIST, label_set, topk=cfg.CLIP_TOPK)
     print("=== 融合结果（集成）===")
     pretty_print_clip_match(clip_match)
-
+    # 根据最终目标清单筛选需要分析的类别（resolved_label_set）
     resolved_label_set = []
     for q in cfg.DEFAULT_TARGET_LIST:
         resolved_label_set += [l for l, score in clip_match.get(q, [])]
+    return resolved_label_set
+
+def calc_group_mean(X, labels, resolved_label_set):
+    """
+    按照resolved_label_set筛选数据，做类别分组均值，得到每类均值的谱图，以及类别顺序
+    X: 原始高光谱样本（可为DataFrame或np.array）
+    labels: 每条样本对应的归一标签
+    resolved_label_set: 需要分析的目标类别
+    返回：X_mean_np（每类均值，shape=(类数, 波段数)），y_mean（类别名称数组）
+    """
     select_indices = [i for i, l in enumerate(labels) if l in resolved_label_set]
-    X_sel = X.iloc[select_indices].values
+    X_sel = X.iloc[select_indices].values if isinstance(X, pd.DataFrame) else X[select_indices]
     y_sel = [labels[i] for i in select_indices]
-
-    print("CLIP 匹配到的类别:", clip_match)
-    print(f"筛选后样本数: {len(y_sel)}, 类别: {set(y_sel)}")
-
-    # 4. 按 label 分组，对每一列特征求均值
+    # 转DataFrame增加分组灵活性
     df = pd.DataFrame(X_sel)
     df['label'] = y_sel
-
-    # dropna保证 NaN 不参与均值计算（不丢类别）
-    X_mean = df.groupby('label').mean(numeric_only=True)      # shape: n_class × n_feat
-    y_mean = X_mean.index.values         
+    X_mean = df.groupby('label').mean(numeric_only=True)
+    y_mean = X_mean.index.values
     X_mean_np = X_mean.values
+    return X_mean_np, y_mean
 
-    # 保存均值样本特征图
-    mean_spectra_path = os.path.join(cfg.RESULT_DIR, f"band_selection_report_mean_spectra.png")
-    plot_mean_spectra(X_mean_np, y_mean, mean_spectra_path)
+def single_band_selection(X_mean_np, TOPK=20):
+    """
+    单波段初筛：按方差法/极差法分别取TOPK波段
+    返回字典形式，便于后续整合及扩展其它方法
+    """
+    selected_bands = {}
+    var_idx, var_score = variance_band_select(X_mean_np, TOPK)  # 方差法选
+    rng_idx, rng_score = range_band_select(X_mean_np, TOPK)     # 极差法选
+    selected_bands['Variance'] = (var_idx, var_score)
+    selected_bands['Range'] = (rng_idx, rng_score)
+    return selected_bands
 
-    # 5. 执行多种selector选波段
-    le = LabelEncoder()
-    y_mean_numeric = le.fit_transform(y_mean)   # 得到数字编码，例如[0, 1, 2, ...]
-    results_dict = run_selectors(X_sel, y_mean_numeric, topk=cfg.BAND_COMB_DIM, device=cfg.DEVICE)
+def combo_band_selection(X_mean_np, y_mean, selected_bands, COMBO_NUM=7):
+    """
+    多波段组合优化：在已预筛 band_pool 中，用贪心法找组合区分力最强的COMBO_NUM个波段
+    band_pool会自动整合var/range法的波段索引并去重
+    优选结果以新的dict key添加到selected_bands
+    """
+    var_band_idxs, _ = selected_bands['Variance']
+    range_band_idxs, _ = selected_bands['Range']
+    band_pool = np.unique(np.concatenate([var_band_idxs, range_band_idxs]))
+    best_combo, best_score = greedy_band_combination(
+        X_mean_np, y_mean, band_pool=band_pool, n_select=COMBO_NUM
+    )
+    selected_bands[f"GreedyCombo_{COMBO_NUM}"] = (np.array(best_combo), [best_score] * len(best_combo))
+    return selected_bands
 
-    print("\n各方法推荐的波段索引：")
-    for method, bands in results_dict.items():
-        print(f"{method}: {bands}")
+def save_and_plot_all(selected_bands, X_mean_np, y_mean, meta):
+    """
+    输出各方法结果表，并对每种方法画对应的selected bands，最终结果保存到csv
+    """
+    # 生成简易报表
+    report_df = report_result_simple(selected_bands, band_names=meta['wavelength'])
+    print(report_df)
+    # 循环画图保存
+    for method in selected_bands:
+        save_path = os.path.join(cfg.RESULT_DIR, f"selected_bands_{method}.png")
+        band_idxs, _ = selected_bands[method]
+        plot_selected_bands(
+            X_mean_np,
+            y_mean,
+            band_idxs,
+            band_names=meta['wavelength'],
+            save_path=save_path,
+            dpi=300,
+            method_desc=method
+        )
+    # 保存最终报告为CSV
+    result_path = os.path.join(cfg.RESULT_DIR, "all_band_selection_report.csv")
+    report_df.to_csv(result_path, index=False)
+    print(f"\n全部方法结果已保存至：{result_path}")
 
-    # 6. 汇总评价
-    eval_df = report_result(results_dict, X_mean_np, y_mean_numeric)
-    print("\n综合评价分数对比 (可直接导出为论文表)：\n", eval_df)
+def main():
+    """
+    主控流程。逐步串联数据加载、语义匹配、分组统计、波段选择与组合、可视化与导出
+    """
+    # 1. 加载原始库和标签
+    X, labels, label_set, meta = prepare_data()
+    # 2. 语义智能匹配目标类别
+    resolved_label_set = semantic_label_matching(label_set)
+    # 3. 每类谱均值准备
+    X_mean_np, y_mean = calc_group_mean(X, labels, resolved_label_set)
+    # 4. 单波段选取（方差法/极差法）
+    TOPK = 20       # 每种方法预选波段个数
+    COMBO_NUM = 7   # 组合法最后输出波段个数
+    selected_bands = single_band_selection(X_mean_np, TOPK)
+    # 5. 自动组合波段优选
+    selected_bands = combo_band_selection(X_mean_np, y_mean, selected_bands, COMBO_NUM)
+    # 6. 输出报表和图
+    save_and_plot_all(selected_bands, X_mean_np, y_mean, meta)
 
-    # 7. 输出到csv
-    result_path = os.path.join(cfg.RESULT_DIR, f"band_selection_report_{'_'.join(cfg.DEFAULT_TARGET_LIST)}.csv")
-    os.makedirs(cfg.RESULT_DIR, exist_ok=True)
-    eval_df.to_csv(result_path, index=False)
-    print(f"\n实验结果已保存至：{result_path}")
+if __name__ == "__main__":
+    main()

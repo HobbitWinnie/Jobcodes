@@ -1,5 +1,5 @@
 import pandas as pd
-from clip_semantic import CLIPSemanticMatcher
+from semantic_matcher.Ensemble_semantic_matcher import CLIPSemanticMatcher
 
 
 class SpectraDataset:

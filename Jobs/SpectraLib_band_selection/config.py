@@ -4,7 +4,7 @@ from pathlib import Path
 class Config:
     def __init__(self):
         # 目录与路径
-        self.DATA_ROOT = "/home/Dataset/nw/spectraLib/unify"
+        self.DATA_ROOT = "/home/Dataset/nw/spectraLib/unify_v3"
         self.RESULT_DIR = "/home/nw/Codes/Jobs/SpectraLib_band_selection/result"
 
         # 波段选择

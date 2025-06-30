@@ -1,5 +1,5 @@
 {
-  "DATA_ROOT": "/home/Dataset/nw/spectraLib/unify",
+  "DATA_ROOT": "/home/Dataset/nw/spectraLib/unify_v3",
   "RESULT_DIR": "/home/nw/Codes/Jobs/SpectraLib_band_selection/result",
   "TOP_N": 5,
   "BAND_COMB_DIM": 10,
