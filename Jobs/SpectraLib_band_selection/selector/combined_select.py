@@ -47,9 +47,9 @@ def greedy_band_selection(
     if band_pool is None:
         band_pool = np.arange(X.shape[1])
     band_pool = np.array(band_pool)
+
     best_combo = None
     best_score = -np.inf
-
     for trial in range(n_trials):
         selected = []
         local_band_pool = band_pool.copy()

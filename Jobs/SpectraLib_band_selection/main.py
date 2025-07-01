@@ -90,7 +90,7 @@ def single_band_selection(X_mean_np, TOPK=20):
     selected_bands['Range'] = (rng_idx, rng_score)
     return selected_bands
 
-def combo_band_selection(X_mean_np, y_mean, selected_bands, COMBO_NUM=7):
+def combo_band_selection(X_mean_np, y_mean, selected_bands, COMBO_NUM=7, EPOCH=100):
     """
     多波段组合优化：在已预筛 band_pool 中，用贪心法找组合区分力最强的COMBO_NUM个波段
     band_pool会自动整合var/range法的波段索引并去重
@@ -99,13 +99,17 @@ def combo_band_selection(X_mean_np, y_mean, selected_bands, COMBO_NUM=7):
     var_band_idxs, _ = selected_bands['Variance']
     range_band_idxs, _ = selected_bands['Range']
     band_pool = np.unique(np.concatenate([var_band_idxs, range_band_idxs]))
+    print(f"\n候选波段有：{band_pool}")
+
+    # 贪心选择
     best_combo, best_score = greedy_band_selection(
-        X_mean_np, y_mean, band_pool=band_pool, n_select=COMBO_NUM, n_trials=100
+        X_mean_np, y_mean, band_pool=band_pool, n_select=COMBO_NUM, n_trials=EPOCH
     )
     selected_bands[f"GreedyCombo_{COMBO_NUM}"] = (np.array(best_combo), [best_score] * len(best_combo))
 
+    # 浮动选择
     best_combo_sffs, best_score_sffs = sffs_band_selection(
-        X_mean_np, y_mean, band_pool=band_pool, n_select=COMBO_NUM, n_trials=100
+        X_mean_np, y_mean, band_pool=band_pool, n_select=COMBO_NUM, n_trials=EPOCH
     )
     selected_bands[f"SffsCombo_{COMBO_NUM}"] = (np.array(best_combo_sffs), [best_score_sffs] * len(best_combo_sffs))
 
@@ -173,12 +177,13 @@ def main():
     X_mean_np, y_mean = calc_group_mean(X, labels, resolved_label_set)
     
     # 4. 单波段选取（方差法/极差法）
-    TOPK = 15       # 每种方法预选波段个数
+    TOPK = 20       # 每种方法预选波段个数
     COMBO_NUM = 5   # 组合法最后输出波段个数
+    EPOCH = 10000
     selected_bands = single_band_selection(X_mean_np, TOPK)
    
     # 5. 自动组合波段优选
-    selected_bands = combo_band_selection(X_mean_np, y_mean, selected_bands, COMBO_NUM)
+    selected_bands = combo_band_selection(X_mean_np, y_mean, selected_bands, COMBO_NUM, EPOCH)
     
     # 6. 新增：验证greedy/sffs等组合的分类性能
     for method in selected_bands:
