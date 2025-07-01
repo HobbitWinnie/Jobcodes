@@ -1,13 +1,11 @@
 import itertools
-import matplotlib.pyplot as plt
 import numpy as np
+from matplotlib.font_manager import FontProperties
+import matplotlib.pyplot as plt
 
+# 设置中文字体
+font = FontProperties(fname='/usr/share/fonts/truetype/wqy/wqy-zenhei.ttc')
 
-def get_combinations(n_bands, comb_dim):
-    """
-    生成所有波段组合
-    """
-    return list(itertools.combinations(range(n_bands), comb_dim))
 
 def get_label_indices(labels, target_list):
     """
@@ -64,7 +62,7 @@ def plot_selected_bands(
                         X_mean_np[:,idx], color='g', s=30, zorder=10,
                         marker="x", alpha=0.6)
 
-    plt.legend(loc="best", fontsize=10)
+    plt.legend(loc="best", fontsize=10, prop=font)
     plt.xlabel('Band' if band_names is None else 'Wavelength')
     plt.ylabel('Mean Value')
     plt.title(f'Mean Spectrum ({method_desc})')

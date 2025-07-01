@@ -4,6 +4,8 @@ sys.path.append('/home/nw/Codes/Jobs/SpectraLib_band_selection')
 import os
 import pandas as pd
 import numpy as np
+from scipy.spatial.distance import cdist
+
 from config import cfg
 from utils import pretty_print_clip_match, plot_selected_bands
 from dataset_loader import load_spectral_library
@@ -12,7 +14,11 @@ from selector.single_band_select import (
     range_band_select, 
     report_result_simple, 
 )
-from selector.combined_select import greedy_band_combination
+from selector.combined_select import (
+    greedy_band_selection,
+    sffs_band_selection,
+    group_discriminability
+)
 from semantic_matcher.Ensemble_semantic_matcher import (
     EVACLIPSemanticMatcher, 
     Text2VecSemanticMatcher, 
@@ -93,10 +99,16 @@ def combo_band_selection(X_mean_np, y_mean, selected_bands, COMBO_NUM=7):
     var_band_idxs, _ = selected_bands['Variance']
     range_band_idxs, _ = selected_bands['Range']
     band_pool = np.unique(np.concatenate([var_band_idxs, range_band_idxs]))
-    best_combo, best_score = greedy_band_combination(
-        X_mean_np, y_mean, band_pool=band_pool, n_select=COMBO_NUM
+    best_combo, best_score = greedy_band_selection(
+        X_mean_np, y_mean, band_pool=band_pool, n_select=COMBO_NUM, n_trials=100
     )
     selected_bands[f"GreedyCombo_{COMBO_NUM}"] = (np.array(best_combo), [best_score] * len(best_combo))
+
+    best_combo_sffs, best_score_sffs = sffs_band_selection(
+        X_mean_np, y_mean, band_pool=band_pool, n_select=COMBO_NUM, n_trials=100
+    )
+    selected_bands[f"SffsCombo_{COMBO_NUM}"] = (np.array(best_combo_sffs), [best_score_sffs] * len(best_combo_sffs))
+
     return selected_bands
 
 def save_and_plot_all(selected_bands, X_mean_np, y_mean, meta):
@@ -124,23 +136,71 @@ def save_and_plot_all(selected_bands, X_mean_np, y_mean, meta):
     report_df.to_csv(result_path, index=False)
     print(f"\n全部方法结果已保存至：{result_path}")
 
+
+def evaluate_band_discriminability(X_mean, y_mean, band_idxs, score_func=None):
+    """
+    用类别均值样本在选定波段下评估类别区分能力
+    X_mean: shape=(类别数, 波段数), 每行一个类别均值
+    y_mean: 类别名
+    band_idxs: 波段索引，用于挑选特定波段分析判别力
+    score_func: 可传入自定义的分组判别力函数
+    返回:
+        - 类别间距离矩阵
+        - （可选）group_discriminability得分
+    """
+    X_sel = X_mean[:, band_idxs]
+    # 1. 欧氏距离矩阵
+    dist_matrix = cdist(X_sel, X_sel)
+    # 2. 可选的分组判别力
+    if score_func is not None:
+        discri_score = score_func(X_sel, y_mean)
+    else:
+        discri_score = None
+    return dist_matrix, discri_score
+
+
 def main():
     """
     主控流程。逐步串联数据加载、语义匹配、分组统计、波段选择与组合、可视化与导出
     """
     # 1. 加载原始库和标签
     X, labels, label_set, meta = prepare_data()
+   
     # 2. 语义智能匹配目标类别
     resolved_label_set = semantic_label_matching(label_set)
+    
     # 3. 每类谱均值准备
     X_mean_np, y_mean = calc_group_mean(X, labels, resolved_label_set)
+    
     # 4. 单波段选取（方差法/极差法）
-    TOPK = 20       # 每种方法预选波段个数
-    COMBO_NUM = 7   # 组合法最后输出波段个数
+    TOPK = 15       # 每种方法预选波段个数
+    COMBO_NUM = 5   # 组合法最后输出波段个数
     selected_bands = single_band_selection(X_mean_np, TOPK)
+   
     # 5. 自动组合波段优选
     selected_bands = combo_band_selection(X_mean_np, y_mean, selected_bands, COMBO_NUM)
-    # 6. 输出报表和图
+    
+    # 6. 新增：验证greedy/sffs等组合的分类性能
+    for method in selected_bands:
+        band_idxs, score_list = selected_bands[method]
+        if isinstance(score_list, (list, np.ndarray)) and len(score_list) == 1:
+            best_score = score_list[0]
+        elif isinstance(score_list, (list, np.ndarray)):
+            best_score = score_list[-1]  # 若track了每一步得分，取最后一步
+        else:
+            best_score = score_list
+
+        print(f"\n方法[{method}] 组合的最终判别力分数（best_score）: {best_score:.4f}")
+
+        # 可选辅助：类别均值间的距离矩阵，仅供分析
+        X_sel = X_mean_np[:, band_idxs]
+        print(f"方法[{method}]得到的类别特征矩阵:\n{X_sel}")
+
+        from scipy.spatial.distance import cdist
+        dist_matrix = cdist(X_sel, X_sel)
+        print(f"方法[{method}]类别均值间距离矩阵:\n{np.round(dist_matrix,3)}")
+
+    # 7. 输出报表和图
     save_and_plot_all(selected_bands, X_mean_np, y_mean, meta)
 
 if __name__ == "__main__":

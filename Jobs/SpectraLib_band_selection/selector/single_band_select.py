@@ -1,17 +1,24 @@
 import pandas as pd
 import numpy as np
 
+
 def variance_band_select(X, topk):
-    # 方差法，忽略NaN
     variances = np.nanvar(X, axis=0)
-    rank = np.argsort(variances)[::-1]
-    return rank[:topk], variances[rank[:topk]]
+    # 只考虑非nan的波段
+    valid = ~np.isnan(variances)
+    rank = np.argsort(variances[valid])[::-1]
+    valid_indices = np.nonzero(valid)[0]
+    top_indices = valid_indices[rank[:topk]]
+    return top_indices, variances[top_indices]
 
 def range_band_select(X, topk):
-    # 极差法，忽略NaN
     ranges = np.nanmax(X, axis=0) - np.nanmin(X, axis=0)
-    rank = np.argsort(ranges)[::-1]
-    return rank[:topk], ranges[rank[:topk]]
+    valid = ~np.isnan(ranges)
+    rank = np.argsort(ranges[valid])[::-1]
+    valid_indices = np.nonzero(valid)[0]
+    top_indices = valid_indices[rank[:topk]]
+    return top_indices, ranges[top_indices]
+
 
 def fisher_band_select(X, y, topk):
     # 单样本/类别情况，Fisher等价range，这里还是实现为可扩展多样本分组
@@ -52,6 +59,6 @@ def report_result_simple(selected_bands_dict, band_names=None):
             "Method": method,
             "BandIdx": band_idxs.tolist(),
             "BandNames": bands_disp,
-            "BandScores": band_scores.tolist(),
+            "BandScores": band_scores,
         })
     return pd.DataFrame(df_report)

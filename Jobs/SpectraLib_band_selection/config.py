@@ -31,7 +31,7 @@ class Config:
         self.CLIP_THRESH = 0.75
 
         # 分类/目标
-        self.DEFAULT_TARGET_LIST = ["水稻", "草地", "菜地", '玉米', '建筑', '裸地', '建设用地', '道路', '自然植被', '草地', '高速公路', '塑料大棚']
+        self.DEFAULT_TARGET_LIST = ["水稻", "草地", "菜地", '玉米', '建筑', '裸地', '道路', '森林', '高速公路', '塑料大棚']
 
         # 设备与其他
         self.DEVICE = "cuda:1"
