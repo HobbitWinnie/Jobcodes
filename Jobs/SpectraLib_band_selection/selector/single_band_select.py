@@ -2,22 +2,23 @@ import pandas as pd
 import numpy as np
 
 
-def variance_band_select(X, topk):
-    variances = np.nanvar(X, axis=0)
-    # 只考虑非nan的波段
-    valid = ~np.isnan(variances)
-    rank = np.argsort(variances[valid])[::-1]
-    valid_indices = np.nonzero(valid)[0]
-    top_indices = valid_indices[rank[:topk]]
-    return top_indices, variances[top_indices]
+def variance_band_select(variances, valid_indices, topk):
+    """
+    只对外部传入的有效波段索引进行排序、选择topk
+    """
+    valid_variances = variances[valid_indices]
+    sort_idx = np.argsort(valid_variances)[::-1][:topk]
+    top_indices = valid_indices[sort_idx]
+    return top_indices, valid_variances[sort_idx]
 
-def range_band_select(X, topk):
-    ranges = np.nanmax(X, axis=0) - np.nanmin(X, axis=0)
-    valid = ~np.isnan(ranges)
-    rank = np.argsort(ranges[valid])[::-1]
-    valid_indices = np.nonzero(valid)[0]
-    top_indices = valid_indices[rank[:topk]]
-    return top_indices, ranges[top_indices]
+def range_band_select(ranges, valid_indices, topk):
+    """
+    只对外部传入的有效波段索引进行排序、选择topk
+    """
+    valid_ranges = ranges[valid_indices]
+    sort_idx = np.argsort(valid_ranges)[::-1][:topk]
+    top_indices = valid_indices[sort_idx]
+    return top_indices, valid_ranges[sort_idx]
 
 
 def fisher_band_select(X, y, topk):

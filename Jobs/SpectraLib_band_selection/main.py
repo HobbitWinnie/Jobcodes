@@ -16,13 +16,13 @@ from selector.single_band_select import (
 )
 from selector.combined_select import (
     greedy_band_selection,
-    sffs_band_selection,
-    group_discriminability
+    sffs_band_selection
 )
 from semantic_matcher.Ensemble_semantic_matcher import (
     EVACLIPSemanticMatcher, 
     Text2VecSemanticMatcher, 
-    EnsembleSemanticMatcher
+    EnsembleSemanticMatcher,
+    CNCLIPSemanticMatcher
 )
 
 def prepare_data():
@@ -49,14 +49,49 @@ def semantic_label_matching(label_set):
     """
     matcher_1 = EVACLIPSemanticMatcher(device=cfg.DEVICE)
     matcher_2 = Text2VecSemanticMatcher(device=cfg.DEVICE)
+    matcher_3 = CNCLIPSemanticMatcher(device=cfg.DEVICE)
     matcher = EnsembleSemanticMatcher(matcher_1, matcher_2, mode='mean')
-    clip_match = matcher.match(cfg.DEFAULT_TARGET_LIST, label_set, topk=cfg.CLIP_TOPK)
+
+    # 各模型匹配结果
+    evaclip_result = matcher_1.match(cfg.DEFAULT_TARGET_LIST, label_set, topk=cfg.CLIP_TOPK)
+    text2vec_result = matcher_2.match(cfg.DEFAULT_TARGET_LIST, label_set, topk=cfg.CLIP_TOPK)
+    cnclip_result = matcher_3.match(cfg.DEFAULT_TARGET_LIST, label_set, topk=cfg.CLIP_TOPK)
+    ensemble_result = matcher.match(cfg.DEFAULT_TARGET_LIST, label_set, topk=cfg.CLIP_TOPK)
+
+    # 打印集成结果
     print("=== 融合结果（集成）===")
-    pretty_print_clip_match(clip_match)
+    pretty_print_clip_match(ensemble_result)
+
+    # 构造保存DataFrame
+    records = []
+    for query in cfg.DEFAULT_TARGET_LIST:
+        # 取四个模型top1结果
+        evaclip_top1 = evaclip_result.get(query, [("", None)])[0]
+        text2vec_top1 = text2vec_result.get(query, [("", None)])[0]
+        cnclip_top1 = cnclip_result.get(query, [("", None)])[0]
+        ensemble_top1 = ensemble_result.get(query, [("", None)])[0]
+
+        def format_result(top1):
+            label, score = top1
+            return f"{label} ({round(score, 4)})" if label else ""
+
+        result_row = {
+            "label": query,
+            "cnclip_result": format_result(cnclip_top1),
+            "evaclip_result": format_result(evaclip_top1),
+            "text2vec_result": format_result(text2vec_top1),
+            "ensemble_result": format_result(ensemble_top1),
+        }
+        records.append(result_row)
+
+    df = pd.DataFrame(records)
+    result_path = os.path.join(cfg.RESULT_DIR, "semantic_label_match_results.csv")
+    df.to_csv(result_path, index=False, encoding='utf-8-sig')
+
     # 根据最终目标清单筛选需要分析的类别（resolved_label_set）
     resolved_label_set = []
     for q in cfg.DEFAULT_TARGET_LIST:
-        resolved_label_set += [l for l, score in clip_match.get(q, [])]
+        resolved_label_set += [l for l, score in ensemble_result.get(q, [])]
     return resolved_label_set
 
 def calc_group_mean(X, labels, resolved_label_set):
@@ -80,12 +115,18 @@ def calc_group_mean(X, labels, resolved_label_set):
 
 def single_band_selection(X_mean_np, TOPK=20):
     """
-    单波段初筛：按方差法/极差法分别取TOPK波段
-    返回字典形式，便于后续整合及扩展其它方法
+    单波段初筛：统一筛选有效波段，再分别用方差法和极差法筛选TOPK
+    返回字典形式，便于整合和扩展
     """
+    # 筛选非nan波段
+    variances = np.nanvar(X_mean_np, axis=0)
+    ranges = np.nanmax(X_mean_np, axis=0) - np.nanmin(X_mean_np, axis=0)
+    valid = (~np.isnan(variances)) & (~np.isnan(ranges))
+    valid_indices = np.where(valid)[0]
+    
     selected_bands = {}
-    var_idx, var_score = variance_band_select(X_mean_np, TOPK)  # 方差法选
-    rng_idx, rng_score = range_band_select(X_mean_np, TOPK)     # 极差法选
+    var_idx, var_score = variance_band_select(variances, valid_indices, TOPK)
+    rng_idx, rng_score = range_band_select(ranges, valid_indices, TOPK)
     selected_bands['Variance'] = (var_idx, var_score)
     selected_bands['Range'] = (rng_idx, rng_score)
     return selected_bands
@@ -177,33 +218,33 @@ def main():
     X_mean_np, y_mean = calc_group_mean(X, labels, resolved_label_set)
     
     # 4. 单波段选取（方差法/极差法）
-    TOPK = 20       # 每种方法预选波段个数
-    COMBO_NUM = 5   # 组合法最后输出波段个数
-    EPOCH = 10000
+    TOPK = 0       # 每种方法预选波段个数
+    COMBO_NUM = 0   # 组合法最后输出波段个数
     selected_bands = single_band_selection(X_mean_np, TOPK)
    
     # 5. 自动组合波段优选
+    EPOCH = 2000
     selected_bands = combo_band_selection(X_mean_np, y_mean, selected_bands, COMBO_NUM, EPOCH)
     
-    # 6. 新增：验证greedy/sffs等组合的分类性能
-    for method in selected_bands:
-        band_idxs, score_list = selected_bands[method]
-        if isinstance(score_list, (list, np.ndarray)) and len(score_list) == 1:
-            best_score = score_list[0]
-        elif isinstance(score_list, (list, np.ndarray)):
-            best_score = score_list[-1]  # 若track了每一步得分，取最后一步
-        else:
-            best_score = score_list
+    # # 6. 新增：验证greedy/sffs等组合的分类性能
+    # for method in selected_bands:
+    #     band_idxs, score_list = selected_bands[method]
+    #     if isinstance(score_list, (list, np.ndarray)) and len(score_list) == 1:
+    #         best_score = score_list[0]
+    #     elif isinstance(score_list, (list, np.ndarray)):
+    #         best_score = score_list[-1]  # 若track了每一步得分，取最后一步
+    #     else:
+    #         best_score = score_list
 
-        print(f"\n方法[{method}] 组合的最终判别力分数（best_score）: {best_score:.4f}")
+    #     print(f"\n方法[{method}] 组合的最终判别力分数（best_score）: {best_score:.4f}")
 
-        # 可选辅助：类别均值间的距离矩阵，仅供分析
-        X_sel = X_mean_np[:, band_idxs]
-        print(f"方法[{method}]得到的类别特征矩阵:\n{X_sel}")
+    #     # 可选辅助：类别均值间的距离矩阵，仅供分析
+    #     X_sel = X_mean_np[:, band_idxs]
+    #     print(f"方法[{method}]得到的类别特征矩阵:\n{X_sel}")
 
-        from scipy.spatial.distance import cdist
-        dist_matrix = cdist(X_sel, X_sel)
-        print(f"方法[{method}]类别均值间距离矩阵:\n{np.round(dist_matrix,3)}")
+    #     from scipy.spatial.distance import cdist
+    #     dist_matrix = cdist(X_sel, X_sel)
+    #     print(f"方法[{method}]类别均值间距离矩阵:\n{np.round(dist_matrix,3)}")
 
     # 7. 输出报表和图
     save_and_plot_all(selected_bands, X_mean_np, y_mean, meta)
